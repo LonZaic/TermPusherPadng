@@ -48,6 +48,7 @@ interface ElectronAPI {
   aiPtyResize: (tabId: string, cols: number, rows: number) => void;
   onAiPtyOutput: (callback: (tabId: string, data: string) => void) => () => void;
   onAiPtyExited: (callback: (tabId: string, exitCode: number) => void) => () => void;
+  ocrRecognize: (dataUrl: string) => Promise<string>;
   openExternal: (url: string) => void;
   onOpenTheme: (callback: () => void) => () => void;
 }

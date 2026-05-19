@@ -57,6 +57,7 @@ interface CommandPanelProps {
   writing: boolean;
   currentProjectPath: string | null;
   onProjectOpen?: (projectPath: string) => void;
+  onOpenOCR?: () => void;
 }
 
 const QUICK_WORKFLOWS = [
@@ -95,7 +96,7 @@ function formatTimeAgo(ts: number): string {
   return new Date(ts).toLocaleDateString('zh-CN');
 }
 
-function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOpen }: CommandPanelProps) {
+function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOpen, onOpenOCR }: CommandPanelProps) {
   const [activeTool, setActiveTool] = useState(TOOL_GROUPS[0]?.id ?? 'cc');
   const [activeTab, setActiveTab] = useState('');
   const [customCommands, setCustomCommands] = useState<CustomCommand[]>(loadCustomCommands);
@@ -452,6 +453,16 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
         >
           &#x23CE;
         </button>
+        {/* OCR button */}
+        {onOpenOCR && (
+          <button
+            className="workflow-btn workflow-ocr-btn"
+            onClick={onOpenOCR}
+            title="识图：从图片中提取文字（Ctrl+Shift+V）"
+          >
+            识图
+          </button>
+        )}
       </div>
 
       {/* Recent projects dropdown */}

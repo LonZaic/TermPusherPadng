@@ -112,6 +112,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('open-theme', handler);
   },
 
+  // OCR
+  ocrRecognize: (dataUrl) => {
+    return ipcRenderer.invoke('ocr-recognize', dataUrl);
+  },
+
   // External links
   openExternal: (url) => {
     ipcRenderer.send('open-external', url);

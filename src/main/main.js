@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require('electron')
 const path = require('path');
 const os = require('os');
 const pty = require('node-pty');
+const { createWorker } = require('tesseract.js');
 const { scanAllSessions } = require('./sessionScanner');
 
 const CHUNK_SIZE = 4096;
@@ -491,6 +492,18 @@ ipcMain.handle('get-connection-info', () => {
 
 ipcMain.handle('scan-sessions', () => {
   return scanAllSessions();
+});
+
+ipcMain.handle('ocr-recognize', async (_event, dataUrl) => {
+  const worker = await createWorker('chi_sim+eng', 1, {
+    langPath: 'https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0/',
+  });
+  try {
+    const { data: { text } } = await worker.recognize(dataUrl);
+    return text.trim();
+  } finally {
+    await worker.terminate();
+  }
 });
 
 ipcMain.on('open-external', (_event, url) => {

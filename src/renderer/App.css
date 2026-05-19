@@ -532,6 +532,7 @@ html, body, #root {
 /* ---- Quick Workflow Bar ---- */
 .workflow-bar {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--app-border);
@@ -540,6 +541,7 @@ html, body, #root {
 
 .workflow-btn {
   flex: 1;
+  min-width: 58px;
   padding: 7px 4px;
   border: 1px solid var(--app-bg-tertiary);
   border-radius: 6px;
@@ -1574,4 +1576,280 @@ html, body, #root {
   border-radius: 8px;
   background: var(--app-accent);
   cursor: pointer;
+}
+
+/* ---- OCR Dialog ---- */
+
+.ocr-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ocr-dialog {
+  position: relative;
+  width: 780px;
+  max-width: 95vw;
+  max-height: 90vh;
+  background: var(--app-bg);
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.ocr-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-bg-secondary);
+}
+
+.ocr-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--app-text);
+  white-space: nowrap;
+}
+
+.ocr-hint {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  flex: 1;
+}
+
+.ocr-close-btn {
+  background: none;
+  border: none;
+  color: var(--app-text-secondary);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.ocr-close-btn:hover {
+  color: var(--app-text);
+}
+
+.ocr-body {
+  display: flex;
+  gap: 14px;
+  padding: 14px 18px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ocr-image-panel {
+  width: 45%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.ocr-image-label {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  align-self: flex-start;
+}
+
+.ocr-paste-zone {
+  width: 100%;
+  min-height: 180px;
+  border: 2px dashed var(--app-border);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: var(--app-bg-tertiary);
+  overflow: hidden;
+  outline: none;
+}
+
+.ocr-paste-zone:hover,
+.ocr-paste-zone:focus {
+  border-color: var(--app-accent);
+  background: var(--app-bg-secondary);
+}
+
+.ocr-paste-zone.drag-over {
+  border-color: var(--app-accent);
+  background: var(--app-bg-secondary);
+}
+
+.ocr-paste-zone.has-image {
+  border-style: solid;
+  min-height: 0;
+  padding: 4px;
+}
+
+.ocr-paste-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--app-text-secondary);
+  font-size: 13px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ocr-paste-icon {
+  font-size: 28px;
+  color: var(--app-text-secondary);
+  font-weight: 300;
+  line-height: 1;
+}
+
+.ocr-paste-sub {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.ocr-preview-image {
+  width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  border-radius: 4px;
+  display: block;
+}
+
+.ocr-change-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-bg-secondary);
+  color: var(--app-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ocr-change-btn:hover {
+  background: var(--app-bg-tertiary);
+}
+
+.ocr-text-panel {
+  width: 55%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.ocr-text-label {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.ocr-textarea {
+  flex: 1;
+  min-height: 200px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-bg-tertiary);
+  color: var(--app-text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px;
+  resize: none;
+  outline: none;
+}
+
+.ocr-textarea:focus {
+  border-color: var(--app-accent);
+}
+
+.ocr-processing {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-text-secondary);
+  font-size: 13px;
+}
+
+.ocr-error {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--red, #e74c3c);
+  font-size: 13px;
+}
+
+.ocr-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-bg-secondary);
+}
+
+.ocr-footer-hint {
+  font-size: 11px;
+  color: var(--app-text-secondary);
+  margin-right: auto;
+}
+
+.ocr-insert-btn {
+  padding: 7px 22px;
+  border: none;
+  border-radius: 6px;
+  background: var(--app-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ocr-insert-btn:hover {
+  filter: brightness(1.1);
+}
+
+.ocr-insert-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.workflow-ocr-btn {
+  font-weight: 500;
+  font-size: 12px;
+  min-width: 42px;
+}
+
+.ocr-toast {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 20px;
+  border-radius: 6px;
+  background: var(--app-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 1010;
+  animation: ocr-toast-in 0.25s ease;
+}
+
+@keyframes ocr-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }

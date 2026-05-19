@@ -5,6 +5,7 @@ import CommandPanel from './CommandPanel';
 import TabBar from './TabBar';
 import NewConversationDialog from './NewConversationDialog';
 import ThemeDialog from './ThemeDialog';
+import ImageOCRDialog from './ImageOCRDialog';
 import { assignTabColor } from './tabColors';
 import type { TabColor } from './tabColors';
 import { addRecentCommand, addRecentProject } from './commandTracker';
@@ -30,6 +31,8 @@ function App() {
   const [themeOpen, setThemeOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeState>(DEFAULT_THEME);
   const [themeVersion, setThemeVersion] = useState(0);
+  const [ocrOpen, setOcrOpen] = useState(false);
+  const [ocrImageDataUrl, setOcrImageDataUrl] = useState<string | null>(null);
   const termRef = useRef<{ focus: () => void }>(null);
 
   const activeTab = tabs.find((t) => t.tabId === activeTabId);
@@ -123,6 +126,59 @@ function App() {
     }
   }, []);
 
+  // Ctrl+Shift+V: paste clipboard image for OCR
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'V') {
+        e.preventDefault();
+        navigator.clipboard.read().then((items) => {
+          for (const item of items) {
+            for (const type of item.types) {
+              if (type.startsWith('image/')) {
+                item.getType(type).then((blob) => {
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    setOcrImageDataUrl(reader.result as string);
+                    setOcrOpen(true);
+                  };
+                  reader.readAsDataURL(blob);
+                });
+                return;
+              }
+            }
+          }
+        }).catch(() => { /* clipboard read failed, likely no image */ });
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Paste event: detect image in clipboard (exclude paste inside xterm textarea)
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (!e.clipboardData) return;
+      const target = e.target as HTMLElement;
+      if (target && (target.closest('.xterm-helper-textarea') || target.closest('textarea'))) return;
+      for (const item of e.clipboardData.items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const blob = item.getAsFile();
+          if (!blob) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            setOcrImageDataUrl(reader.result as string);
+            setOcrOpen(true);
+          };
+          reader.readAsDataURL(blob);
+          return;
+        }
+      }
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, []);
+
   const handleSwitchTab = useCallback(async (tabId: string) => {
     if (tabId === activeTabId) return;
     const result = await window.electronAPI.switchTab(tabId);
@@ -176,6 +232,18 @@ function App() {
     try { localStorage.setItem('app-theme', JSON.stringify(t)); } catch { /* ignore */ }
   }, []);
 
+  const handleOCRInsert = useCallback((text: string) => {
+    if (!activeTabId) return;
+    addRecentCommand('(识图)', 'panel');
+    window.electronAPI.writeToTerminal(activeTabId, text);
+    termRef.current?.focus();
+  }, [activeTabId]);
+
+  const handleOpenOCR = useCallback(() => {
+    setOcrImageDataUrl(null);
+    setOcrOpen(true);
+  }, []);
+
   const handleProjectOpen = useCallback((projectPath: string) => {
     addRecentProject(projectPath);
   }, []);
@@ -218,6 +286,7 @@ function App() {
             writing={writing}
             currentProjectPath={activeTab?.projectPath || null}
             onProjectOpen={handleProjectOpen}
+            onOpenOCR={handleOpenOCR}
           />
           <div className="terminal-wrapper">
             {loading ? (
@@ -255,6 +324,12 @@ function App() {
         onClose={() => setThemeOpen(false)}
         theme={theme}
         onApply={handleThemeApply}
+      />
+      <ImageOCRDialog
+        open={ocrOpen}
+        imageDataUrl={ocrImageDataUrl}
+        onClose={() => { setOcrOpen(false); setOcrImageDataUrl(null); }}
+        onInsert={handleOCRInsert}
       />
     </div>
   );
