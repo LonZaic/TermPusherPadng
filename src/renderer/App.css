@@ -21,10 +21,10 @@ html, body, #root {
 .tab-bar {
   display: flex;
   align-items: stretch;
-  background: #11111b;
+  background: #181825;
   border-bottom: 1px solid #313244;
   flex-shrink: 0;
-  min-height: 36px;
+  min-height: 38px;
 }
 
 .tab-list {
@@ -120,6 +120,16 @@ html, body, #root {
 .tab-new-btn:hover {
   color: #cdd6f4;
   background: #181825;
+}
+
+.loading-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #585b70;
+  font-size: 13px;
+  user-select: none;
 }
 
 /* ---- Main Content ---- */

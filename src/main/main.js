@@ -6,12 +6,8 @@ const pty = require('node-pty');
 const CHUNK_SIZE = 4096;
 const CHUNK_DELAY_MS = 10;
 
-let mainWindow = null;
-
-// ---- Tab / PTY management ----
-const tabs = new Map();
-const tabOrder = [];
-let activeTabId = null;
+// Per-window state: each BrowserWindow owns its tabs independently
+const windows = new Map();
 
 function generateTabId() {
   return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -30,13 +26,18 @@ function spawnPty(cwd) {
   });
 }
 
-function activePty() {
-  if (!activeTabId) return null;
-  const tab = tabs.get(activeTabId);
+function getWindowState(win) {
+  if (!win) return null;
+  return windows.get(win.id);
+}
+
+function activePty(winState) {
+  if (!winState || !winState.activeTabId) return null;
+  const tab = winState.tabs.get(winState.activeTabId);
   return tab ? tab.ptyProcess : null;
 }
 
-function createTab(projectPath, tabName) {
+function createTab(winState, projectPath, tabName) {
   const tabId = generateTabId();
   const cwd = projectPath || process.env.USERPROFILE;
   const ptyProcess = spawnPty(cwd);
@@ -44,12 +45,13 @@ function createTab(projectPath, tabName) {
   const folderName = projectPath ? path.basename(projectPath) : 'Terminal';
   const name = tabName || folderName;
 
-  tabs.set(tabId, { ptyProcess, projectPath, name, cwd });
-  tabOrder.push(tabId);
+  winState.tabs.set(tabId, { ptyProcess, projectPath, name, cwd });
+  winState.tabOrder.push(tabId);
 
   ptyProcess.onData((data) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('pty-output', { tabId, data });
+    const bw = winState.win;
+    if (bw && !bw.isDestroyed()) {
+      bw.webContents.send('pty-output', { tabId, data });
     }
   });
 
@@ -57,9 +59,10 @@ function createTab(projectPath, tabName) {
     console.log(`PTY ${tabId} exited with code ${exitCode}, signal ${signal}`);
   });
 
-  // Notify renderer
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('tab-created', {
+  // Notify the owning window
+  const bw = winState.win;
+  if (bw && !bw.isDestroyed()) {
+    bw.webContents.send('tab-created', {
       tabId, name, projectPath, cwd,
     });
   }
@@ -67,30 +70,33 @@ function createTab(projectPath, tabName) {
   return tabId;
 }
 
-function closeTab(tabId) {
-  const tab = tabs.get(tabId);
+function closeTab(winState, tabId) {
+  const tab = winState.tabs.get(tabId);
   if (!tab) return;
   try { tab.ptyProcess.kill(); } catch (_) { /* ignore */ }
-  tabs.delete(tabId);
-  const idx = tabOrder.indexOf(tabId);
-  if (idx !== -1) tabOrder.splice(idx, 1);
+  winState.tabs.delete(tabId);
+  const idx = winState.tabOrder.indexOf(tabId);
+  if (idx !== -1) winState.tabOrder.splice(idx, 1);
 
-  if (activeTabId === tabId) {
-    activeTabId = tabOrder.length > 0 ? tabOrder[tabOrder.length - 1] : null;
+  if (winState.activeTabId === tabId) {
+    winState.activeTabId = winState.tabOrder.length > 0
+      ? winState.tabOrder[winState.tabOrder.length - 1]
+      : null;
   }
 
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('tab-closed', { tabId, activeTabId });
+  const bw = winState.win;
+  if (bw && !bw.isDestroyed()) {
+    bw.webContents.send('tab-closed', { tabId, activeTabId: winState.activeTabId });
   }
 }
 
-function killAllPtys() {
-  for (const [, tab] of tabs) {
+function killAllPtysForWindow(winState) {
+  for (const [, tab] of winState.tabs) {
     try { tab.ptyProcess.kill(); } catch (_) { /* ignore */ }
   }
-  tabs.clear();
-  tabOrder.length = 0;
-  activeTabId = null;
+  winState.tabs.clear();
+  winState.tabOrder.length = 0;
+  winState.activeTabId = null;
 }
 
 // ---- Utilities ----
@@ -120,11 +126,12 @@ function buildMenu() {
           label: 'New Tab',
           accelerator: 'CmdOrCtrl+T',
           click: () => {
-            const tabId = createTab(null, 'Terminal');
-            activeTabId = tabId;
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('activate-tab', tabId);
-            }
+            const win = BrowserWindow.getFocusedWindow();
+            const ws = getWindowState(win);
+            if (!ws) return;
+            const tabId = createTab(ws, null, 'Terminal');
+            ws.activeTabId = tabId;
+            ws.win.webContents.send('activate-tab', tabId);
           },
         },
         { type: 'separator' },
@@ -132,7 +139,10 @@ function buildMenu() {
           label: 'Open File...',
           accelerator: 'CmdOrCtrl+O',
           click: async () => {
-            const result = await dialog.showOpenDialog(mainWindow, {
+            const win = BrowserWindow.getFocusedWindow();
+            const ws = getWindowState(win);
+            if (!ws) return;
+            const result = await dialog.showOpenDialog(ws.win, {
               title: 'Open File',
               properties: ['openFile'],
               filters: [{ name: 'All Files', extensions: ['*'] }],
@@ -140,7 +150,7 @@ function buildMenu() {
             if (!result.canceled && result.filePaths.length > 0) {
               const filePath = result.filePaths[0];
               const quoted = filePath.includes(' ') ? `"${filePath}"` : filePath;
-              const p = activePty();
+              const p = activePty(ws);
               if (p) p.write(quoted + ' ');
             }
           },
@@ -149,17 +159,18 @@ function buildMenu() {
           label: 'Open Folder...',
           accelerator: 'CmdOrCtrl+Shift+O',
           click: async () => {
-            const result = await dialog.showOpenDialog(mainWindow, {
+            const win = BrowserWindow.getFocusedWindow();
+            const ws = getWindowState(win);
+            if (!ws) return;
+            const result = await dialog.showOpenDialog(ws.win, {
               title: 'Open Folder',
               properties: ['openDirectory'],
             });
             if (!result.canceled && result.filePaths.length > 0) {
               const folderPath = result.filePaths[0];
-              const tabId = createTab(folderPath, null);
-              activeTabId = tabId;
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('activate-tab', tabId);
-              }
+              const tabId = createTab(ws, folderPath, null);
+              ws.activeTabId = tabId;
+              ws.win.webContents.send('activate-tab', tabId);
             }
           },
         },
@@ -195,35 +206,8 @@ function buildMenu() {
   Menu.setApplicationMenu(menu);
 }
 
-// ---- Window ----
-function createWindow(initialProject) {
-  mainWindow = new BrowserWindow({
-    width: 900,
-    height: 650,
-    minWidth: 600,
-    minHeight: 400,
-    title: 'TermPusherPad',
-    backgroundColor: '#1e1e2e',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-    },
-  });
-
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
-  if (devServerUrl) {
-    const url = initialProject
-      ? `${devServerUrl}#initialProject=${encodeURIComponent(initialProject)}`
-      : devServerUrl;
-    mainWindow.loadURL(url);
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '../../dist/renderer/index.html'));
-  }
-}
-
-function createNewWindow(projectPath) {
+// ---- Window creation ----
+function createWindowData(initialProject) {
   const win = new BrowserWindow({
     width: 900,
     height: 650,
@@ -239,22 +223,49 @@ function createNewWindow(projectPath) {
     },
   });
 
+  const ws = {
+    win,
+    tabs: new Map(),
+    tabOrder: [],
+    activeTabId: null,
+  };
+  windows.set(win.id, ws);
+
+  win.on('closed', () => {
+    killAllPtysForWindow(ws);
+    windows.delete(win.id);
+  });
+
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
-    const url = projectPath
-      ? `${devServerUrl}#initialProject=${encodeURIComponent(projectPath)}`
+    const url = initialProject
+      ? `${devServerUrl}#initialProject=${encodeURIComponent(initialProject)}`
       : devServerUrl;
     win.loadURL(url);
   } else {
     win.loadFile(path.join(__dirname, '../../dist/renderer/index.html'));
   }
+
+  return ws;
 }
 
-// ---- IPC handlers ----
+// ---- IPC Handlers ----
+
+function getWindowForEvent(event) {
+  const bw = BrowserWindow.fromWebContents(event.sender);
+  return bw ? getWindowState(bw) : null;
+}
 
 // Write keystrokes to a specific tab's PTY
 ipcMain.on('write-to-terminal', (event, { tabId, content }) => {
-  const tab = tabs.get(tabId);
+  const ws = getWindowForEvent(event);
+  if (!ws) {
+    if (!event.sender.isDestroyed()) {
+      event.reply('write-complete', { success: false, error: 'Window not found' });
+    }
+    return;
+  }
+  const tab = ws.tabs.get(tabId);
   if (!tab) {
     if (!event.sender.isDestroyed()) {
       event.reply('write-complete', { success: false, error: 'Tab not found' });
@@ -281,44 +292,49 @@ ipcMain.on('write-to-terminal', (event, { tabId, content }) => {
   });
 });
 
-ipcMain.on('pty-resize', (_event, { tabId, cols, rows }) => {
-  const tab = tabs.get(tabId);
+ipcMain.on('pty-resize', (event, { tabId, cols, rows }) => {
+  const ws = getWindowForEvent(event);
+  if (!ws) return;
+  const tab = ws.tabs.get(tabId);
   if (tab) tab.ptyProcess.resize(cols, rows);
 });
 
-// Create a new tab
-ipcMain.handle('create-tab', (_event, { projectPath, tabName }) => {
-  const tabId = createTab(projectPath || null, tabName || null);
-  activeTabId = tabId;
-  const tab = tabs.get(tabId);
+ipcMain.handle('create-tab', (event, { projectPath, tabName }) => {
+  const ws = getWindowForEvent(event);
+  if (!ws) throw new Error('Window not found');
+  const tabId = createTab(ws, projectPath || null, tabName || null);
+  ws.activeTabId = tabId;
+  const tab = ws.tabs.get(tabId);
   return { tabId, name: tab.name, projectPath: tab.projectPath, cwd: tab.cwd };
 });
 
-// Open in new window
 ipcMain.handle('open-new-window', (_event, { projectPath }) => {
-  createNewWindow(projectPath || null);
+  createWindowData(projectPath || null);
 });
 
-// Close a tab
-ipcMain.handle('close-tab', (_event, { tabId }) => {
-  closeTab(tabId);
-  return { activeTabId };
+ipcMain.handle('close-tab', (event, { tabId }) => {
+  const ws = getWindowForEvent(event);
+  if (!ws) return { activeTabId: null };
+  closeTab(ws, tabId);
+  return { activeTabId: ws.activeTabId };
 });
 
-// Switch to a tab
-ipcMain.handle('switch-tab', (_event, { tabId }) => {
-  if (tabs.has(tabId)) {
-    activeTabId = tabId;
+ipcMain.handle('switch-tab', (event, { tabId }) => {
+  const ws = getWindowForEvent(event);
+  if (!ws) return { tabId: null };
+  if (ws.tabs.has(tabId)) {
+    ws.activeTabId = tabId;
     return { tabId };
   }
-  return { tabId: activeTabId };
+  return { tabId: ws.activeTabId };
 });
 
-// Get all tabs (for renderer init)
-ipcMain.handle('get-tabs', () => {
+ipcMain.handle('get-tabs', (event) => {
+  const ws = getWindowForEvent(event);
+  if (!ws) return { tabs: [], activeTabId: null };
   const list = [];
-  for (const tabId of tabOrder) {
-    const tab = tabs.get(tabId);
+  for (const tabId of ws.tabOrder) {
+    const tab = ws.tabs.get(tabId);
     if (tab) {
       list.push({
         tabId,
@@ -328,16 +344,13 @@ ipcMain.handle('get-tabs', () => {
       });
     }
   }
-  return { tabs: list, activeTabId };
+  return { tabs: list, activeTabId: ws.activeTabId };
 });
 
-// Get the initial project from the URL hash (for new windows)
 ipcMain.handle('get-initial-project', () => {
-  // This is handled by the renderer reading window.location.hash
   return null;
 });
 
-// Connection info
 ipcMain.handle('get-connection-info', () => {
   return { ip: getLocalIP(), port: 5173 };
 });
@@ -345,25 +358,28 @@ ipcMain.handle('get-connection-info', () => {
 // ---- App lifecycle ----
 app.whenReady().then(() => {
   buildMenu();
-  createWindow();
-  // Default tab
-  const tabId = createTab(null, 'Terminal');
-  activeTabId = tabId;
+  const ws = createWindowData(null);
+  const tabId = createTab(ws, null, 'Terminal');
+  ws.activeTabId = tabId;
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-      const newTabId = createTab(null, 'Terminal');
-      activeTabId = newTabId;
+      const newWs = createWindowData(null);
+      const newTabId = createTab(newWs, null, 'Terminal');
+      newWs.activeTabId = newTabId;
     }
   });
 });
 
 app.on('window-all-closed', () => {
-  killAllPtys();
+  for (const [, ws] of windows) {
+    killAllPtysForWindow(ws);
+  }
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
-  killAllPtys();
+  for (const [, ws] of windows) {
+    killAllPtysForWindow(ws);
+  }
 });

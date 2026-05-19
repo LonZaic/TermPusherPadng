@@ -20,13 +20,17 @@ function App() {
   const [activeTabId, setActiveTabId] = useState<string>('');
   const [writing, setWriting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
   const termRef = useRef<{ focus: () => void }>(null);
 
   const activeTab = tabs.find((t) => t.tabId === activeTabId);
 
   // Initialize tabs from main process
   useEffect(() => {
+    let cancelled = false;
+
     window.electronAPI.getTabs().then(({ tabs: rawTabs, activeTabId: aid }) => {
+      if (cancelled) return;
       const existing: TabState[] = [];
       const withColors: TabState[] = [];
       for (const t of rawTabs) {
@@ -37,13 +41,22 @@ function App() {
       }
       setTabs(withColors);
       setActiveTabId(aid);
+      setLoading(false);
+    }).catch((err) => {
+      console.error('getTabs failed:', err);
+      if (!cancelled) setLoading(false);
     });
 
     const unsubCreated = window.electronAPI.onTabCreated((tab) => {
       setTabs((prev) => {
+        // deduplicate
+        if (prev.some((t) => t.tabId === tab.tabId)) return prev;
         const color = assignTabColor(tab.projectPath, prev);
         return [...prev, { ...tab, color }];
       });
+      // auto-switch to newly created tab (from menu or folder open)
+      setActiveTabId(tab.tabId);
+      setTimeout(() => termRef.current?.focus(), 80);
     });
 
     const unsubClosed = window.electronAPI.onTabClosed(({ tabId, activeTabId: newActive }) => {
@@ -53,9 +66,11 @@ function App() {
 
     const unsubActivate = window.electronAPI.onActivateTab((tabId) => {
       setActiveTabId(tabId);
+      setTimeout(() => termRef.current?.focus(), 50);
     });
 
     return () => {
+      cancelled = true;
       unsubCreated();
       unsubClosed();
       unsubActivate();
@@ -106,8 +121,7 @@ function App() {
       await window.electronAPI.openNewWindow(projectPath);
     } else {
       const tab = await window.electronAPI.createTab(projectPath, null);
-      setActiveTabId(tab.tabId);
-      setTimeout(() => termRef.current?.focus(), 100);
+      // Tab will be auto-switched via onTabCreated event
     }
   }, []);
 
@@ -130,7 +144,13 @@ function App() {
       <div className="main-content">
         <CommandPanel onWriteCommand={handleWriteCommand} writing={writing} />
         <div className="terminal-wrapper">
-          {activeTabId && <TerminalPanel key={activeTabId} ref={termRef} tabId={activeTabId} />}
+          {loading ? (
+            <div className="loading-hint">正在连接终端...</div>
+          ) : activeTabId ? (
+            <TerminalPanel key={activeTabId} ref={termRef} tabId={activeTabId} />
+          ) : (
+            <div className="loading-hint">点击 + 新建标签</div>
+          )}
         </div>
       </div>
       <NewConversationDialog
