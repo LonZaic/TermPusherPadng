@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { CC_CATEGORIES, type CommandEntry } from './commandsData';
+import { TOOL_GROUPS, type CommandEntry } from './commandsData';
 import CustomCommandDialog from './CustomCommandDialog';
 
 interface CustomCommand {
@@ -29,14 +29,44 @@ interface CommandPanelProps {
 }
 
 function CommandPanel({ onWriteCommand, writing }: CommandPanelProps) {
-  const [activeTab, setActiveTab] = useState('startup');
+  const [activeTool, setActiveTool] = useState(TOOL_GROUPS[0]?.id ?? 'cc');
+  const [activeTab, setActiveTab] = useState('');
   const [customCommands, setCustomCommands] = useState<CustomCommand[]>(loadCustomCommands);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCommand, setEditingCommand] = useState<{ id: string; name: string; command: string } | null>(null);
 
+  const currentTool = TOOL_GROUPS.find((t) => t.id === activeTool);
+  const showCustom = activeTool === 'custom';
+  const isCustomTool = showCustom;
+
+  const customCategory = {
+    id: 'custom-cmds',
+    name: '自定义',
+    icon: '+',
+    commands: customCommands.map((c) => ({
+      id: c.id,
+      command: c.command,
+      description: c.name,
+    })),
+  };
+
+  const categories = isCustomTool
+    ? [customCategory]
+    : [...(currentTool?.categories ?? []), customCategory];
+
   useEffect(() => {
     saveCustomCommands(customCommands);
   }, [customCommands]);
+
+  // Reset active tab when tool changes
+  useEffect(() => {
+    const cats = isCustomTool
+      ? [customCategory]
+      : [...(currentTool?.categories ?? []), customCategory];
+    if (cats.length > 0 && !cats.find((c) => c.id === activeTab)) {
+      setActiveTab(cats[0].id);
+    }
+  }, [activeTool]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAddCustom = useCallback((name: string, command: string) => {
     const newCmd: CustomCommand = {
@@ -73,27 +103,35 @@ function CommandPanel({ onWriteCommand, writing }: CommandPanelProps) {
     setDialogOpen(true);
   }, []);
 
-  const categories = [
-    ...CC_CATEGORIES,
-    {
-      id: 'custom',
-      name: '自定义',
-      icon: '+',
-      commands: customCommands.map((c) => ({
-        id: c.id,
-        command: c.command,
-        description: c.name,
-      })),
-    },
-  ];
-
   const currentCategory = categories.find((c) => c.id === activeTab) || categories[0];
 
   return (
     <div className="command-panel">
       <div className="command-panel-header">
-        <span className="command-panel-title">Claude Code 命令</span>
+        <span className="command-panel-title">命令面板</span>
       </div>
+
+      {/* Tool selector */}
+      <div className="tool-selector">
+        {TOOL_GROUPS.map((tool) => (
+          <button
+            key={tool.id}
+            className={`tool-selector-btn ${activeTool === tool.id ? 'active' : ''}`}
+            onClick={() => setActiveTool(tool.id)}
+          >
+            {tool.name}
+          </button>
+        ))}
+        <button
+          key="custom-tool"
+          className={`tool-selector-btn ${activeTool === 'custom' ? 'active' : ''}`}
+          onClick={() => setActiveTool('custom')}
+        >
+          自定义
+        </button>
+      </div>
+
+      {/* Category tabs */}
       <div className="command-tabs">
         {categories.map((cat) => (
           <button
@@ -105,13 +143,15 @@ function CommandPanel({ onWriteCommand, writing }: CommandPanelProps) {
           </button>
         ))}
       </div>
+
+      {/* Command list */}
       <div className="command-list">
-        {currentCategory.commands.length === 0 ? (
+        {currentCategory && currentCategory.commands.length === 0 ? (
           <div className="command-empty">
             还没有自定义命令
           </div>
         ) : (
-          currentCategory.commands.map((cmd) => (
+          currentCategory?.commands.map((cmd) => (
             <div key={cmd.id} className="command-item-group">
               <button
                 className="command-item"
@@ -122,7 +162,7 @@ function CommandPanel({ onWriteCommand, writing }: CommandPanelProps) {
                 <span className="command-text">{cmd.command}</span>
                 <span className="command-desc">{cmd.description}</span>
               </button>
-              {activeTab === 'custom' && (
+              {activeTab === 'custom-cmds' && (
                 <div className="command-actions">
                   <button
                     className="command-action-btn edit"
@@ -146,12 +186,13 @@ function CommandPanel({ onWriteCommand, writing }: CommandPanelProps) {
             </div>
           ))
         )}
-        {activeTab === 'custom' && (
+        {activeTab === 'custom-cmds' && (
           <button className="command-add-btn" onClick={openAddDialog}>
             + 添加自定义命令
           </button>
         )}
       </div>
+
       <CustomCommandDialog
         open={dialogOpen}
         onClose={() => { setDialogOpen(false); setEditingCommand(null); }}

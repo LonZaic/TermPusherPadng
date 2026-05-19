@@ -2,17 +2,20 @@ import React, { useEffect, useRef, useImperativeHandle, forwardRef } from 'react
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 
-const TerminalPanel = forwardRef<{ focus: () => void }>((_props, ref) => {
+interface TerminalPanelProps {
+  tabId: string;
+}
+
+const TerminalPanel = forwardRef<{ focus: () => void }, TerminalPanelProps>(({ tabId }, ref) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstance = useRef<Terminal | null>(null);
   const fitAddon = useRef<FitAddon | null>(null);
 
   useImperativeHandle(ref, () => ({
-    focus: () => {
-      termInstance.current?.focus();
-    },
+    focus: () => termInstance.current?.focus(),
   }));
 
+  // Initialize terminal once
   useEffect(() => {
     if (!terminalRef.current) return;
 
@@ -59,24 +62,15 @@ const TerminalPanel = forwardRef<{ focus: () => void }>((_props, ref) => {
     fitAddon.current = fit;
     termInstance.current = term;
 
-    const cleanup = window.electronAPI.onTerminalOutput((data) => {
-      term.write(data);
-    });
-
-    term.onData((data) => {
-      window.electronAPI.writeToTerminal(data);
-    });
-
+    // Resize observer
     const resizeObserver = new ResizeObserver(() => {
       try {
         fit.fit();
         const dims = fit.proposeDimensions();
         if (dims) {
-          window.electronAPI.ptyResize(dims.cols, dims.rows);
+          window.electronAPI.ptyResize(tabId, dims.cols, dims.rows);
         }
-      } catch {
-        // ignore resize errors
-      }
+      } catch { /* ignore */ }
     });
 
     if (terminalRef.current) {
@@ -84,11 +78,37 @@ const TerminalPanel = forwardRef<{ focus: () => void }>((_props, ref) => {
     }
 
     return () => {
-      cleanup();
       resizeObserver.disconnect();
       term.dispose();
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle PTY output (filtered by tabId) — clear on switch
+  useEffect(() => {
+    if (termInstance.current) {
+      termInstance.current.clear();
+    }
+    const cleanup = window.electronAPI.onPtyOutput((eventTabId, data) => {
+      if (eventTabId === tabId && termInstance.current) {
+        termInstance.current.write(data);
+      }
+    });
+    return cleanup;
+  }, [tabId]);
+
+  // Forward keystrokes to PTY
+  useEffect(() => {
+    const term = termInstance.current;
+    if (!term) return;
+
+    const onDataDispose = term.onData((data) => {
+      window.electronAPI.writeToTerminal(tabId, data);
+    });
+
+    return () => {
+      onDataDispose.dispose();
+    };
+  }, [tabId]);
 
   return <div ref={terminalRef} className="terminal-container" />;
 });
