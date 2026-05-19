@@ -4,9 +4,10 @@ import { FitAddon } from '@xterm/addon-fit';
 
 interface TerminalPanelProps {
   tabId: string;
+  onCommandCapture?: (command: string) => void;
 }
 
-const TerminalPanel = forwardRef<{ focus: () => void }, TerminalPanelProps>(({ tabId }, ref) => {
+const TerminalPanel = forwardRef<{ focus: () => void }, TerminalPanelProps>(({ tabId, onCommandCapture }, ref) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstance = useRef<Terminal | null>(null);
   const fitAddon = useRef<FitAddon | null>(null);
@@ -96,19 +97,38 @@ const TerminalPanel = forwardRef<{ focus: () => void }, TerminalPanelProps>(({ t
     return cleanup;
   }, [tabId]);
 
-  // Forward keystrokes to PTY
+  // Forward keystrokes to PTY + capture commands
   useEffect(() => {
     const term = termInstance.current;
     if (!term) return;
 
+    let lineBuf = '';
+
     const onDataDispose = term.onData((data) => {
       window.electronAPI.writeToTerminal(tabId, data);
+
+      // Capture terminal input to detect commands
+      for (const ch of data) {
+        if (ch === '\r') {
+          const cmd = lineBuf.trim();
+          if (cmd.length >= 3 && onCommandCapture) {
+            onCommandCapture(cmd);
+          }
+          lineBuf = '';
+        } else if (ch === '\x7f' || ch === '\b') {
+          lineBuf = lineBuf.slice(0, -1);
+        } else if (ch === '\x03') {
+          lineBuf = ''; // Ctrl+C
+        } else if (ch.length === 1 && ch.charCodeAt(0) >= 32) {
+          lineBuf += ch;
+        }
+      }
     });
 
     return () => {
       onDataDispose.dispose();
     };
-  }, [tabId]);
+  }, [tabId, onCommandCapture]);
 
   return <div ref={terminalRef} className="terminal-container" />;
 });

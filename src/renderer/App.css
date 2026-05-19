@@ -186,6 +186,7 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
 .command-panel-header {
@@ -408,6 +409,194 @@ html, body, #root {
   text-align: center;
   color: #585b70;
   font-size: 12px;
+}
+
+/* ---- Search Bar ---- */
+.command-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #1e1e2e;
+  flex-shrink: 0;
+}
+
+.search-icon {
+  font-size: 13px;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: #cdd6f4;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  min-width: 0;
+}
+
+.search-input::placeholder {
+  color: #585b70;
+}
+
+.search-clear {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #6c7086;
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.12s ease;
+}
+
+.search-clear:hover {
+  background: #313244;
+  color: #cdd6f4;
+}
+
+/* ---- Search result tags ---- */
+.search-tag {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-right: 2px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+.search-tag-cc { background: #1e66f5; color: #fff; }
+.search-tag-reasonix { background: #a6e3a1; color: #1e1e2e; }
+.search-tag-codex { background: #f9e2af; color: #1e1e2e; }
+.search-tag-custom { background: #cba6f7; color: #1e1e2e; }
+
+/* ---- Quick Workflow Bar ---- */
+.workflow-bar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #1e1e2e;
+  flex-shrink: 0;
+}
+
+.workflow-btn {
+  flex: 1;
+  padding: 7px 4px;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.workflow-btn:hover:not(:disabled) {
+  background: #313244;
+  border-color: #45475a;
+}
+
+.workflow-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.workflow-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.workflow-project-btn {
+  flex: 0 0 auto;
+  width: 34px;
+  font-size: 14px;
+  padding: 7px 0;
+}
+
+.workflow-project-btn.active {
+  background: #313244;
+  border-color: #89b4fa;
+}
+
+/* ---- Recent Projects Dropdown ---- */
+.recent-projects-dropdown {
+  position: absolute;
+  top: 74px;
+  right: 0;
+  left: 0;
+  background: #1e1e2e;
+  border: 1px solid #45475a;
+  border-radius: 8px;
+  margin: 4px 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.recent-projects-dropdown::-webkit-scrollbar {
+  width: 4px;
+}
+
+.recent-projects-dropdown::-webkit-scrollbar-thumb {
+  background: #313244;
+  border-radius: 2px;
+}
+
+.recent-projects-empty {
+  padding: 16px;
+  text-align: center;
+  color: #585b70;
+  font-size: 12px;
+}
+
+.recent-project-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease;
+}
+
+.recent-project-item:hover {
+  background: #313244;
+}
+
+.recent-project-item + .recent-project-item {
+  border-top: 1px solid #181825;
+}
+
+.recent-project-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #cdd6f4;
+}
+
+.recent-project-path {
+  font-size: 10px;
+  color: #6c7086;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 /* ---- Dialogs ---- */

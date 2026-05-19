@@ -5,6 +5,7 @@ import TabBar from './TabBar';
 import NewConversationDialog from './NewConversationDialog';
 import { assignTabColor } from './tabColors';
 import type { TabColor } from './tabColors';
+import { addRecentCommand, addRecentProject } from './commandTracker';
 import './App.css';
 
 interface TabState {
@@ -117,11 +118,11 @@ function App() {
     openInNewWindow: boolean,
   ) => {
     setDialogOpen(false);
+    if (projectPath) addRecentProject(projectPath);
     if (openInNewWindow) {
       await window.electronAPI.openNewWindow(projectPath);
     } else {
-      const tab = await window.electronAPI.createTab(projectPath, null);
-      // Tab will be auto-switched via onTabCreated event
+      await window.electronAPI.createTab(projectPath, null);
     }
   }, []);
 
@@ -129,8 +130,17 @@ function App() {
     if (writing || !activeTabId) return;
     setWriting(true);
     window.electronAPI.writeToTerminal(activeTabId, command);
+    addRecentCommand(command, 'panel');
     termRef.current?.focus();
   }, [writing, activeTabId]);
+
+  const handleCommandCapture = useCallback((command: string) => {
+    addRecentCommand(command, 'terminal');
+  }, []);
+
+  const handleProjectOpen = useCallback((projectPath: string) => {
+    addRecentProject(projectPath);
+  }, []);
 
   return (
     <div className="app">
@@ -142,12 +152,22 @@ function App() {
         onNewConversation={handleNewConversation}
       />
       <div className="main-content">
-        <CommandPanel onWriteCommand={handleWriteCommand} writing={writing} />
+        <CommandPanel
+          onWriteCommand={handleWriteCommand}
+          writing={writing}
+          currentProjectPath={activeTab?.projectPath || null}
+          onProjectOpen={handleProjectOpen}
+        />
         <div className="terminal-wrapper">
           {loading ? (
             <div className="loading-hint">正在连接终端...</div>
           ) : activeTabId ? (
-            <TerminalPanel key={activeTabId} ref={termRef} tabId={activeTabId} />
+            <TerminalPanel
+              key={activeTabId}
+              ref={termRef}
+              tabId={activeTabId}
+              onCommandCapture={handleCommandCapture}
+            />
           ) : (
             <div className="loading-hint">点击 + 新建标签</div>
           )}
