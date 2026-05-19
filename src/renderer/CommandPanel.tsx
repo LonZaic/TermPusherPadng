@@ -11,6 +11,7 @@ interface CustomCommand {
 }
 
 const STORAGE_KEY = 'term-pusher-custom-commands';
+const AUTO_ENTER_KEY = 'term-pusher-auto-enter';
 
 function loadCustomCommands(): CustomCommand[] {
   try {
@@ -23,6 +24,18 @@ function loadCustomCommands(): CustomCommand[] {
 
 function saveCustomCommands(commands: CustomCommand[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(commands));
+}
+
+function loadAutoEnter(): boolean {
+  try {
+    return localStorage.getItem(AUTO_ENTER_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function saveAutoEnter(v: boolean) {
+  localStorage.setItem(AUTO_ENTER_KEY, String(v));
 }
 
 interface CommandPanelProps {
@@ -42,6 +55,12 @@ const SESSION_RESUME_COMMAND: Record<string, (id: string) => string> = {
   cc: (id) => `claude -r "${id}"`,
   codex: (id) => `codex resume ${id}`,
   reasonix: (id) => `reasonix -c "${id}"`,
+};
+
+const TOOL_META: Record<string, { name: string; tagClass: string }> = {
+  cc: { name: 'Claude Code', tagClass: 'search-tag-cc' },
+  codex: { name: 'Codex', tagClass: 'search-tag-codex' },
+  reasonix: { name: 'Reasonix', tagClass: 'search-tag-reasonix' },
 };
 
 function formatTimeAgo(ts: number): string {
@@ -67,10 +86,14 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>(getRecentProjects);
   const [showRecentProjects, setShowRecentProjects] = useState(false);
 
+  // Auto-enter toggle
+  const [autoEnter, setAutoEnter] = useState(loadAutoEnter);
+
   // Session history state
   const [sessions, setSessions] = useState<SessionScanResult | null>(null);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<string>('all');
+  const [prevTool, setPrevTool] = useState(TOOL_GROUPS[0]?.id ?? 'cc');
 
   const isSearching = searchQuery.trim().length > 0;
   const isHistory = activeTool === 'history';
@@ -116,6 +139,10 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
   useEffect(() => {
     saveCustomCommands(customCommands);
   }, [customCommands]);
+
+  useEffect(() => {
+    saveAutoEnter(autoEnter);
+  }, [autoEnter]);
 
   // Reset active tab when tool changes
   useEffect(() => {
@@ -172,13 +199,19 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
     setDialogOpen(true);
   }, []);
 
+  // Unified command writer — appends \r when autoEnter is on
+  const writeCmd = useCallback((cmd: string) => {
+    const final = autoEnter ? cmd + '\r' : cmd;
+    onWriteCommand(final);
+  }, [autoEnter, onWriteCommand]);
+
   // Command click handler
   const handleCommandClick = useCallback((cmd: string) => {
     addCommandClick(cmd);
     addRecentCommand(cmd, 'panel');
     setRecentCommands(getRecentCommands());
-    onWriteCommand(cmd);
-  }, [onWriteCommand]);
+    writeCmd(cmd);
+  }, [writeCmd]);
 
   // Session resume handler
   const handleSessionResume = useCallback((tool: string, id: string) => {
@@ -257,23 +290,32 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
 
   const handleProjectClick = useCallback((projectPath: string) => {
     onProjectOpen?.(projectPath);
-    onWriteCommand(`cd /d "${projectPath}"`);
-  }, [onProjectOpen, onWriteCommand]);
+    writeCmd(`cd /d "${projectPath}"`);
+  }, [onProjectOpen, writeCmd]);
 
-  // Build filtered session list for history view
-  const filteredSessions = useMemo(() => {
+  // Build grouped or flat session list for history view
+  const sessionGroups = useMemo(() => {
     if (!sessions) return [];
+    const keys: Array<'cc' | 'codex' | 'reasonix'> = ['cc', 'codex', 'reasonix'];
+
     if (historyFilter === 'all') {
-      const all: Array<SessionEntry & { tool: string }> = [];
-      for (const s of sessions.cc) all.push({ ...s, tool: s.tool });
-      for (const s of sessions.codex) all.push({ ...s, tool: s.tool });
-      for (const s of sessions.reasonix) all.push({ ...s, tool: s.tool });
-      all.sort((a, b) => b.updatedAt - a.updatedAt);
-      return all;
+      return keys.map((key) => ({
+        key,
+        name: TOOL_META[key]?.name || key,
+        tagClass: TOOL_META[key]?.tagClass || '',
+        sessions: [...(sessions[key] || [])].sort((a, b) => b.updatedAt - a.updatedAt),
+      })).filter((g) => g.sessions.length > 0);
     }
+
     const list = sessions[historyFilter as keyof SessionScanResult];
-    if (!Array.isArray(list)) return [];
-    return [...list].sort((a, b) => b.updatedAt - a.updatedAt);
+    if (!Array.isArray(list) || list.length === 0) return [];
+    const sorted = [...list].sort((a, b) => b.updatedAt - a.updatedAt);
+    return [{
+      key: historyFilter,
+      name: TOOL_META[historyFilter]?.name || historyFilter,
+      tagClass: TOOL_META[historyFilter]?.tagClass || '',
+      sessions: sorted,
+    }];
   }, [sessions, historyFilter]);
 
   return (
@@ -298,7 +340,7 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
         )}
       </div>
 
-      {/* Quick workflow buttons */}
+      {/* Quick workflow buttons + auto-enter toggle */}
       <div className="workflow-bar">
         {QUICK_WORKFLOWS.map((wf) => (
           <button
@@ -317,6 +359,14 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
           title="最近项目"
         >
           &#x1F4C1;
+        </button>
+        {/* Auto-enter toggle */}
+        <button
+          className={`workflow-btn workflow-auto-btn ${autoEnter ? 'active' : ''}`}
+          onClick={() => setAutoEnter(!autoEnter)}
+          title={autoEnter ? '自动回车：开（点击关闭）' : '自动回车：关（点击开启）'}
+        >
+          &#x23CE;
         </button>
       </div>
 
@@ -346,6 +396,11 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
 
       {/* Header */}
       <div className="command-panel-header">
+        {isHistory && (
+          <button className="history-back-btn" onClick={() => setActiveTool(prevTool)} title="返回">
+            &#x2190;
+          </button>
+        )}
         <span className="command-panel-title">{isHistory ? '历史对话' : '命令面板'}</span>
         {isHistory && (
           <button className="session-refresh-btn" onClick={handleRefreshSessions} title="刷新">
@@ -392,7 +447,7 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
               className={`history-filter-btn ${historyFilter === 'cc' ? 'active' : ''}`}
               onClick={() => setHistoryFilter('cc')}
             >
-              Claude Code
+              CC
             </button>
             <button
               className={`history-filter-btn ${historyFilter === 'codex' ? 'active' : ''}`}
@@ -414,33 +469,40 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
               <div className="command-empty">正在扫描会话...</div>
             ) : sessions === null ? (
               <div className="command-empty">加载会话失败</div>
-            ) : filteredSessions.length === 0 ? (
+            ) : sessionGroups.length === 0 ? (
               <div className="command-empty">
                 {sessions.total === 0
                   ? '未找到历史会话，在终端中使用 CLI 工具后会自动出现'
                   : '当前筛选下无会话'}
               </div>
             ) : (
-              filteredSessions.map((s) => (
-                <div key={`${s.tool}-${s.id}`} className="session-item">
-                  <div className="session-info">
-                    <div className="session-header">
-                      <span className={`search-tag search-tag-${s.tool}`}>{s.toolName}</span>
-                      <span className="session-time">{formatTimeAgo(s.updatedAt)}</span>
-                    </div>
-                    <div className="session-title" title={s.title}>{s.title}</div>
-                    {s.subtitle && (
-                      <div className="session-subtitle" title={s.subtitle}>{s.subtitle}</div>
-                    )}
+              sessionGroups.map((group) => (
+                <div key={group.key} className="session-group">
+                  <div className="session-group-header">
+                    <span className={`search-tag ${group.tagClass}`}>{group.name}</span>
+                    <span className="session-group-count">{group.sessions.length}</span>
                   </div>
-                  <button
-                    className="session-resume-btn"
-                    onClick={() => handleSessionResume(s.tool, s.id)}
-                    disabled={writing}
-                    title="恢复此会话"
-                  >
-                    恢复
-                  </button>
+                  {group.sessions.map((s) => (
+                    <div key={`${s.tool}-${s.id}`} className="session-item">
+                      <div className="session-info">
+                        <div className="session-title" title={s.title}>{s.title}</div>
+                        <div className="session-meta">
+                          {s.subtitle && (
+                            <span className="session-subtitle" title={s.subtitle}>{s.subtitle}</span>
+                          )}
+                          <span className="session-time">{formatTimeAgo(s.updatedAt)}</span>
+                        </div>
+                      </div>
+                      <button
+                        className="session-resume-btn"
+                        onClick={() => handleSessionResume(s.tool, s.id)}
+                        disabled={writing}
+                        title="恢复此会话"
+                      >
+                        恢复
+                      </button>
+                    </div>
+                  ))}
                 </div>
               ))
             )}
@@ -469,7 +531,10 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
             <button
               key="history-tool"
               className={`tool-selector-btn history-tool-btn ${activeTool === 'history' ? 'active' : ''}`}
-              onClick={() => setActiveTool('history')}
+              onClick={() => {
+                setPrevTool(activeTool !== 'history' ? activeTool : prevTool);
+                setActiveTool('history');
+              }}
             >
               历史
             </button>

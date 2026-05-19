@@ -30,112 +30,121 @@ function statSafe(filePath) {
 }
 
 /**
- * Extract the first meaningful user message from a Claude Code jsonl conversation file.
+ * Decode Claude Code's project directory name back to a readable path.
+ * Claude Code encodes paths like "E:\\CCBar" → "E--CCBar"
+ * by replacing ':' and '\\' with '-'.
  */
-function extractCCSessionTitle(filePath) {
-  try {
-    const raw = fs.readFileSync(filePath, 'utf-8');
-    const lines = raw.trim().split('\n');
-    for (const line of lines) {
-      const entry = JSON.parse(line);
-      // Look for the first user message
-      if (entry.role === 'user' && entry.content && typeof entry.content === 'string') {
-        const text = entry.content.trim();
-        if (text.length > 0 && text.length < 120) return text;
-        if (text.length >= 120) return text.slice(0, 117) + '...';
-      }
-      // Also check for array content (multimodal)
-      if (entry.role === 'user' && Array.isArray(entry.content)) {
-        for (const block of entry.content) {
-          if (block.type === 'text' && block.text) {
-            const t = block.text.trim();
-            if (t.length > 0 && t.length < 120) return t;
-            if (t.length >= 120) return t.slice(0, 117) + '...';
-          }
-        }
-      }
-    }
-  } catch {
-    // ignore parse errors
+function decodeProjectDirName(dirName) {
+  // Each directory segment was joined with '--' and drive colon replaced
+  // Examples: "E--CCBar" → "E:/CCBar", "C--Users----" → "C:/Users/..."
+  // We try to reconstruct a reasonable short name
+  const parts = dirName.split('--');
+  if (parts.length === 2 && parts[0].length === 1) {
+    // Drive letter: E--CCBar → E:\CCBar
+    return parts[1] || dirName;
   }
-  return null;
+  if (parts.length >= 2) {
+    // Multi-folder path: take the last meaningful segment
+    return parts[parts.length - 1] || dirName;
+  }
+  return dirName;
 }
 
 /**
- * Get project name from a workspace path hash by looking at the sessions metadata
+ * Extract the first user message from a Claude Code jsonl file.
+ * Returns null if no user message found.
  */
-function getProjectNameFromCwd(cwd) {
-  if (!cwd) return null;
-  const parts = cwd.split(/[\\/]/);
-  return parts[parts.length - 1] || cwd;
+function extractTitleFromJsonl(filePath) {
+  // Only read the first ~200 lines to keep it fast for large files
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(32768); // 32KB header read
+    const bytesRead = fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+    const raw = buf.slice(0, bytesRead).toString('utf-8');
+    const lines = raw.split('\n');
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        if (entry.role === 'user') {
+          if (typeof entry.content === 'string' && entry.content.trim()) {
+            const text = entry.content.trim();
+            return text.length <= 100 ? text : text.slice(0, 97) + '...';
+          }
+          if (Array.isArray(entry.content)) {
+            for (const block of entry.content) {
+              if (block.type === 'text' && block.text && block.text.trim()) {
+                const t = block.text.trim();
+                return t.length <= 100 ? t : t.slice(0, 97) + '...';
+              }
+            }
+          }
+        }
+      } catch { /* skip malformed lines */ }
+    }
+  } catch { /* skip unreadable files */ }
+  return null;
 }
 
 // ============================================================
-// Claude Code sessions
+// Claude Code sessions — scan ALL jsonl files in ALL projects
 // ============================================================
 function scanClaudeCodeSessions() {
-  const sessionsDir = path.join(HOME, '.claude', 'sessions');
   const projectsDir = path.join(HOME, '.claude', 'projects');
+  const sessionsDir = path.join(HOME, '.claude', 'sessions');
   const results = [];
 
+  // Build a lookup from session JSON files: sessionId → {cwd, startedAt, kind}
+  const sessionMeta = new Map();
   const sessionFiles = listDirSafe(sessionsDir).filter((f) => f.endsWith('.json'));
-  if (sessionFiles.length === 0) return results;
-
-  // Build a map of project hash -> session title from jsonl files
-  const titleCache = new Map();
-
   for (const file of sessionFiles) {
-    const sessionData = readJsonSafe(path.join(sessionsDir, file));
-    if (!sessionData || !sessionData.sessionId) continue;
-
-    const { sessionId, cwd, startedAt, updatedAt, kind, status } = sessionData;
-
-    // Try to find a title from conversation files
-    let title = null;
-    if (!titleCache.has(sessionId)) {
-      // Search projects directory for matching jsonl
-      const projectDirs = listDirSafe(projectsDir);
-      for (const dir of projectDirs) {
-        const projectSessionPath = path.join(projectsDir, dir, `${sessionId}.jsonl`);
-        const titleFromFile = extractCCSessionTitle(projectSessionPath);
-        if (titleFromFile) {
-          title = titleFromFile;
-          titleCache.set(sessionId, title);
-          break;
-        }
-        // Also check with partial match
-        const dirFiles = listDirSafe(path.join(projectsDir, dir));
-        const match = dirFiles.find((f) => f.startsWith(sessionId) || f.includes(sessionId));
-        if (match) {
-          const t = extractCCSessionTitle(path.join(projectsDir, dir, match));
-          if (t) {
-            title = t;
-            titleCache.set(sessionId, t);
-            break;
-          }
-        }
-      }
-    } else {
-      title = titleCache.get(sessionId);
+    const data = readJsonSafe(path.join(sessionsDir, file));
+    if (data && data.sessionId) {
+      sessionMeta.set(data.sessionId, {
+        cwd: data.cwd || '',
+        startedAt: data.startedAt || 0,
+        kind: data.kind || 'interactive',
+      });
     }
-
-    const projectName = getProjectNameFromCwd(cwd);
-
-    results.push({
-      id: sessionId,
-      tool: 'cc',
-      toolName: 'Claude Code',
-      title: title || projectName || `会话 ${file.replace('.json', '')}`,
-      subtitle: projectName || cwd || '',
-      cwd: cwd || '',
-      startedAt: startedAt || 0,
-      updatedAt: updatedAt || startedAt || 0,
-      kind: kind || 'interactive',
-      status: status || 'unknown',
-    });
   }
 
-  // Sort by most recent first
+  // Scan each project directory for jsonl files
+  const projectDirs = listDirSafe(projectsDir);
+  for (const dirName of projectDirs) {
+    const projectDir = path.join(projectsDir, dirName);
+    const stat = statSafe(projectDir);
+    if (!stat || !stat.isDirectory()) continue;
+
+    const projectName = decodeProjectDirName(dirName);
+
+    const files = listDirSafe(projectDir);
+    for (const file of files) {
+      if (!file.endsWith('.jsonl')) continue;
+      const sessionId = file.replace('.jsonl', '');
+      const filePath = path.join(projectDir, file);
+      const fileStat = statSafe(filePath);
+      if (!fileStat || fileStat.size < 100) continue; // skip tiny/empty files
+
+      const meta = sessionMeta.get(sessionId);
+      const title = extractTitleFromJsonl(filePath);
+
+      results.push({
+        id: sessionId,
+        tool: 'cc',
+        toolName: 'Claude Code',
+        title: title || `会话 ${sessionId.slice(0, 8)}`,
+        subtitle: projectName || (meta ? meta.cwd : ''),
+        cwd: meta ? meta.cwd : '',
+        startedAt: meta ? meta.startedAt : fileStat.birthtimeMs,
+        updatedAt: fileStat.mtimeMs,
+        kind: meta ? meta.kind : 'interactive',
+        status: 'idle',
+      });
+    }
+  }
+
+  // Sort newest first
   results.sort((a, b) => b.updatedAt - a.updatedAt);
   return results;
 }
@@ -154,17 +163,19 @@ function scanCodexSessions() {
     if (!stat) continue;
 
     if (stat.isDirectory()) {
-      // Codex stores sessions as directories with metadata.json
       const meta = readJsonSafe(path.join(entryPath, 'metadata.json'));
-      if (meta) {
+      const sessionJson = readJsonSafe(path.join(entryPath, 'session.json'));
+      const data = meta || sessionJson;
+      if (data) {
+        const cwd = data.cwd || '';
         results.push({
-          id: meta.id || entry,
+          id: data.id || data.sessionId || entry,
           tool: 'codex',
           toolName: 'Codex',
-          title: meta.title || entry,
-          subtitle: meta.cwd ? getProjectNameFromCwd(meta.cwd) : entry,
-          cwd: meta.cwd || '',
-          startedAt: meta.startedAt ? new Date(meta.startedAt).getTime() : stat.birthtimeMs,
+          title: data.title || data.name || entry,
+          subtitle: cwd ? (cwd.split(/[\\/]/).pop() || cwd) : entry,
+          cwd,
+          startedAt: data.startedAt ? new Date(data.startedAt).getTime() : stat.birthtimeMs,
           updatedAt: stat.mtimeMs,
           kind: 'interactive',
           status: 'idle',
@@ -172,14 +183,15 @@ function scanCodexSessions() {
       }
     } else if (entry.endsWith('.json')) {
       const data = readJsonSafe(entryPath);
-      if (data && data.id) {
+      if (data && (data.id || data.sessionId)) {
+        const cwd = data.cwd || '';
         results.push({
-          id: data.id || entry.replace('.json', ''),
+          id: data.id || data.sessionId || entry.replace('.json', ''),
           tool: 'codex',
           toolName: 'Codex',
           title: data.title || data.name || entry.replace('.json', ''),
-          subtitle: data.cwd ? getProjectNameFromCwd(data.cwd) : '',
-          cwd: data.cwd || '',
+          subtitle: cwd ? (cwd.split(/[\\/]/).pop() || cwd) : '',
+          cwd,
           startedAt: data.startedAt ? new Date(data.startedAt).getTime() : stat.birthtimeMs,
           updatedAt: stat.mtimeMs,
           kind: 'interactive',
@@ -211,13 +223,14 @@ function scanReasonixSessions() {
       const sessionJson = readJsonSafe(path.join(entryPath, 'session.json'));
       const data = meta || sessionJson;
       if (data) {
+        const cwd = data.cwd || '';
         results.push({
           id: data.id || data.sessionId || entry,
           tool: 'reasonix',
           toolName: 'Reasonix',
           title: data.title || data.name || entry,
-          subtitle: data.cwd ? getProjectNameFromCwd(data.cwd) : entry,
-          cwd: data.cwd || '',
+          subtitle: cwd ? (cwd.split(/[\\/]/).pop() || cwd) : '',
+          cwd,
           startedAt: data.startedAt ? new Date(data.startedAt).getTime() : stat.birthtimeMs,
           updatedAt: stat.mtimeMs,
           kind: 'interactive',
@@ -227,13 +240,14 @@ function scanReasonixSessions() {
     } else if (entry.endsWith('.json')) {
       const data = readJsonSafe(entryPath);
       if (data) {
+        const cwd = data.cwd || '';
         results.push({
           id: data.id || data.sessionId || entry.replace('.json', ''),
           tool: 'reasonix',
           toolName: 'Reasonix',
           title: data.title || data.name || entry.replace('.json', ''),
-          subtitle: data.cwd ? getProjectNameFromCwd(data.cwd) : '',
-          cwd: data.cwd || '',
+          subtitle: cwd ? (cwd.split(/[\\/]/).pop() || cwd) : '',
+          cwd,
           startedAt: data.createdAt || data.startedAt ? new Date(data.createdAt || data.startedAt).getTime() : stat.birthtimeMs,
           updatedAt: stat.mtimeMs,
           kind: 'interactive',

@@ -61,7 +61,7 @@ function CustomCommandDialog({ open, onClose, onSave, editData }: CustomCommandD
             {nameError && <span className="dialog-error">{nameError}</span>}
           </div>
           <div className="dialog-field">
-            <label>命令内容</label>
+            <label>命令内容 <span className="dialog-label-hint">支持多行/长文本，可直接粘贴完整脚本</span></label>
             <textarea
               value={command}
               onChange={(e) => { setCommand(e.target.value); setCommandError(''); }}

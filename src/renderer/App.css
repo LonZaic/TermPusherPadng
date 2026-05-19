@@ -611,6 +611,28 @@ html, body, #root {
   color: #f9e2af !important;
 }
 
+/* ---- History Back Button ---- */
+.history-back-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #6c7086;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  margin-right: 4px;
+}
+
+.history-back-btn:hover {
+  background: #313244;
+  color: #cdd6f4;
+}
+
 /* ---- Session Refresh ---- */
 .session-refresh-btn {
   width: 24px;
@@ -668,6 +690,26 @@ html, body, #root {
   font-weight: 600;
 }
 
+/* ---- Session Group Headers ---- */
+.session-group {
+  margin-bottom: 10px;
+}
+
+.session-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 6px;
+  border-bottom: 1px solid #313244;
+  margin-bottom: 4px;
+}
+
+.session-group-count {
+  font-size: 10px;
+  color: #585b70;
+  margin-left: auto;
+}
+
 /* ---- Session Items ---- */
 .session-item {
   display: flex;
@@ -691,16 +733,17 @@ html, body, #root {
   gap: 2px;
 }
 
-.session-header {
+.session-meta {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .session-time {
   font-size: 10px;
   color: #585b70;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .session-title {
@@ -745,6 +788,26 @@ html, body, #root {
 .session-resume-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* ---- Auto-enter Toggle ---- */
+.workflow-auto-btn {
+  flex: 0 0 auto;
+  width: 34px;
+  font-size: 14px;
+  padding: 7px 0;
+  border-color: #45475a;
+  color: #585b70;
+}
+
+.workflow-auto-btn.active {
+  background: #1e66f5;
+  border-color: #1e66f5;
+  color: #fff;
+}
+
+.workflow-auto-btn:hover:not(:disabled) {
+  border-color: #89b4fa;
 }
 
 /* ---- Dialogs ---- */
@@ -845,6 +908,12 @@ html, body, #root {
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.dialog-label-hint {
+  font-weight: 400;
+  color: #585b70;
+  font-size: 10px;
 }
 
 .dialog-error {
