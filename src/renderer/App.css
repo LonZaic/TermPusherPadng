@@ -201,6 +201,28 @@ html, body, #root {
   user-select: none;
 }
 
+.command-panel-title { flex: 1; }
+
+.doc-link {
+  font-size: 10px;
+  color: #89b4fa;
+  text-decoration: none;
+  padding: 2px 8px;
+  border: 1px solid #313244;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  text-transform: none;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.doc-link:hover {
+  background: #1e1e2e;
+  border-color: #89b4fa;
+  color: #b4d9ff;
+}
+
 .tool-selector {
   display: flex;
   gap: 2px;
@@ -908,6 +930,68 @@ html, body, #root {
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.dialog-override-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.dialog-override-skip {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  background: #181825;
+  color: #6c7086;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.dialog-override-skip:hover {
+  border-color: #45475a;
+  color: #a6adc8;
+}
+
+.dialog-override-skip.active {
+  border-color: #a6e3a1;
+  color: #a6e3a1;
+  background: rgba(166, 227, 161, 0.08);
+}
+
+.dialog-select {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  background: #181825;
+  color: #cdd6f4;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23585b70'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+.dialog-select:focus {
+  border-color: #89b4fa;
+}
+
+.dialog-select option {
+  background: #1e1e2e;
+  color: #cdd6f4;
 }
 
 .dialog-label-hint {

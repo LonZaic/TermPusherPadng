@@ -11,6 +11,7 @@ interface CustomCommand {
 }
 
 const STORAGE_KEY = 'term-pusher-custom-commands';
+const OVERRIDES_KEY = 'term-pusher-overrides';
 const AUTO_ENTER_KEY = 'term-pusher-auto-enter';
 
 function loadCustomCommands(): CustomCommand[] {
@@ -24,6 +25,19 @@ function loadCustomCommands(): CustomCommand[] {
 
 function saveCustomCommands(commands: CustomCommand[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(commands));
+}
+
+function loadOverrides(): Record<string, CustomCommand> {
+  try {
+    const raw = localStorage.getItem(OVERRIDES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveOverrides(overrides: Record<string, CustomCommand>) {
+  localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
 }
 
 function loadAutoEnter(): boolean {
@@ -63,6 +77,12 @@ const TOOL_META: Record<string, { name: string; tagClass: string }> = {
   reasonix: { name: 'Reasonix', tagClass: 'search-tag-reasonix' },
 };
 
+const DOC_URLS: Record<string, string> = {
+  cc: 'https://docs.anthropic.com/en/docs/claude-code/overview',
+  codex: 'https://github.com/openai/codex',
+  reasonix: 'https://github.com/anthropics/reasonix',
+};
+
 function formatTimeAgo(ts: number): string {
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60000);
@@ -79,6 +99,7 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
   const [activeTool, setActiveTool] = useState(TOOL_GROUPS[0]?.id ?? 'cc');
   const [activeTab, setActiveTab] = useState('');
   const [customCommands, setCustomCommands] = useState<CustomCommand[]>(loadCustomCommands);
+  const [overrides, setOverrides] = useState<Record<string, CustomCommand>>(loadOverrides);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCommand, setEditingCommand] = useState<{ id: string; name: string; command: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -101,6 +122,34 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
   const currentTool = TOOL_GROUPS.find((t) => t.id === activeTool);
   const showCustom = activeTool === 'custom';
   const isCustomTool = showCustom;
+
+  // Build list of all built-in commands for the override dropdown
+  const builtinCommands = useMemo(() => {
+    const list: Array<{ command: string; description: string; toolName: string }> = [];
+    for (const tool of TOOL_GROUPS) {
+      for (const cat of tool.categories) {
+        for (const cmd of cat.commands) {
+          list.push({ command: cmd.command, description: cmd.description, toolName: tool.name });
+        }
+      }
+    }
+    return list;
+  }, []);
+
+  // Apply overrides to built-in command list
+  const applyOverrides = useCallback((commands: CommandEntry[]): CommandEntry[] => {
+    return commands.map((cmd) => {
+      const override = overrides[cmd.command];
+      if (override) {
+        return {
+          ...cmd,
+          command: override.command,
+          description: override.name + ' (已覆盖)',
+        };
+      }
+      return cmd;
+    });
+  }, [overrides]);
 
   const customCategory = useMemo(() => ({
     id: 'custom-cmds',
@@ -127,18 +176,25 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
   const categories = useMemo(() => {
     const base = isCustomTool
       ? []
-      : [...(currentTool?.categories ?? [])];
+      : (currentTool?.categories ?? []).map((cat) => ({
+          ...cat,
+          commands: applyOverrides(cat.commands),
+        }));
     const withRecent = isCustomTool
       ? [customCategory]
       : recentCategory.commands.length > 0
         ? [recentCategory, ...base, customCategory]
         : [...base, customCategory];
     return withRecent;
-  }, [isCustomTool, currentTool, customCategory, recentCategory]);
+  }, [isCustomTool, currentTool, customCategory, recentCategory, applyOverrides]);
 
   useEffect(() => {
     saveCustomCommands(customCommands);
   }, [customCommands]);
+
+  useEffect(() => {
+    saveOverrides(overrides);
+  }, [overrides]);
 
   useEffect(() => {
     saveAutoEnter(autoEnter);
@@ -164,29 +220,51 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
     }
   }, [isHistory, sessions]);
 
-  const handleAddCustom = useCallback((name: string, command: string) => {
+  const handleAddCustom = useCallback((name: string, command: string, overrideTarget: string | null) => {
     const newCmd: CustomCommand = {
       id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       name,
       command,
     };
     setCustomCommands((prev) => [...prev, newCmd]);
+    if (overrideTarget) {
+      setOverrides((prev) => ({ ...prev, [overrideTarget]: newCmd }));
+    }
     setDialogOpen(false);
   }, []);
 
-  const handleEditCustom = useCallback((name: string, command: string) => {
+  const handleEditCustom = useCallback((name: string, command: string, overrideTarget: string | null) => {
     if (!editingCommand) return;
     setCustomCommands((prev) =>
       prev.map((c) =>
         c.id === editingCommand.id ? { ...c, name, command } : c
       )
     );
+    // Remove old overrides pointing to this command
+    setOverrides((prev) => {
+      const next = { ...prev };
+      for (const key of Object.keys(next)) {
+        if (next[key].id === editingCommand.id) delete next[key];
+      }
+      if (overrideTarget) {
+        next[overrideTarget] = { id: editingCommand.id, name, command };
+      }
+      return next;
+    });
     setEditingCommand(null);
     setDialogOpen(false);
   }, [editingCommand]);
 
   const handleDeleteCustom = useCallback((id: string) => {
     setCustomCommands((prev) => prev.filter((c) => c.id !== id));
+    // Also remove any override for this command
+    setOverrides((prev) => {
+      const next = { ...prev };
+      for (const key of Object.keys(next)) {
+        if (next[key].id === id) delete next[key];
+      }
+      return next;
+    });
   }, []);
 
   const openEditDialog = useCallback((cmd: CustomCommand) => {
@@ -199,7 +277,7 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
     setDialogOpen(true);
   }, []);
 
-  // Unified command writer — appends \r when autoEnter is on
+  // Unified command writer
   const writeCmd = useCallback((cmd: string) => {
     const final = autoEnter ? cmd + '\r' : cmd;
     onWriteCommand(final);
@@ -241,13 +319,16 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
     for (const tool of TOOL_GROUPS) {
       for (const cat of tool.categories) {
         for (const cmd of cat.commands) {
+          const override = overrides[cmd.command];
+          const cmdText = override ? override.command : cmd.command;
+          const descText = override ? `${override.name} (已覆盖)` : cmd.description;
           if (
-            cmd.command.toLowerCase().includes(q) ||
-            cmd.description.toLowerCase().includes(q)
+            cmdText.toLowerCase().includes(q) ||
+            descText.toLowerCase().includes(q)
           ) {
             results.push({
-              command: cmd.command,
-              description: cmd.description,
+              command: cmdText,
+              description: descText,
               toolName: tool.name,
               toolId: tool.id,
             });
@@ -269,7 +350,7 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
       }
     }
     return results;
-  }, [isSearching, searchQuery, customCommands]);
+  }, [isSearching, searchQuery, customCommands, overrides]);
 
   // Sort commands by frequency
   const sortByFrequency = useCallback((commands: CommandEntry[]): CommandEntry[] => {
@@ -317,6 +398,9 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
       sessions: sorted,
     }];
   }, [sessions, historyFilter]);
+
+  const docUrl = !isHistory && !isCustomTool && currentTool
+    ? DOC_URLS[currentTool.id] : null;
 
   return (
     <div className="command-panel">
@@ -402,6 +486,14 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
           </button>
         )}
         <span className="command-panel-title">{isHistory ? '历史对话' : '命令面板'}</span>
+        {docUrl && (
+          <a className="doc-link" href={docUrl} title="查看官方命令文档" onClick={(e) => {
+            e.preventDefault();
+            window.electronAPI.openExternal(docUrl);
+          }}>
+            &#x1F4D6; 文档
+          </a>
+        )}
         {isHistory && (
           <button className="session-refresh-btn" onClick={handleRefreshSessions} title="刷新">
             &#x21BB;
@@ -563,7 +655,7 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
               sortByFrequency(currentCategory?.commands || []).map((cmd) => (
                 <div key={cmd.id} className="command-item-group">
                   <button
-                    className="command-item"
+                    className={`command-item${overrides[cmd.command] ? ' overridden' : ''}`}
                     onClick={() => handleCommandClick(cmd.command)}
                     disabled={writing}
                     title={cmd.command}
@@ -609,6 +701,7 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
         onClose={() => { setDialogOpen(false); setEditingCommand(null); }}
         onSave={editingCommand ? handleEditCustom : handleAddCustom}
         editData={editingCommand ? { name: editingCommand.name, command: editingCommand.command } : null}
+        builtinCommands={builtinCommands}
       />
     </div>
   );

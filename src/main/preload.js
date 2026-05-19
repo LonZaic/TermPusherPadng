@@ -71,4 +71,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   scanSessions: () => {
     return ipcRenderer.invoke('scan-sessions');
   },
+
+  // External links
+  openExternal: (url) => {
+    ipcRenderer.send('open-external', url);
+  },
 });

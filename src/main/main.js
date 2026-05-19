@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require('electron');
 const path = require('path');
 const os = require('os');
 const pty = require('node-pty');
@@ -358,6 +358,12 @@ ipcMain.handle('get-connection-info', () => {
 
 ipcMain.handle('scan-sessions', () => {
   return scanAllSessions();
+});
+
+ipcMain.on('open-external', (_event, url) => {
+  if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
+    shell.openExternal(url);
+  }
 });
 
 // ---- App lifecycle ----

@@ -40,6 +40,7 @@ interface ElectronAPI {
   openNewWindow: (projectPath: string | null) => Promise<void>;
   getConnectionInfo: () => Promise<{ ip: string; port: number }>;
   scanSessions: () => Promise<SessionScanResult>;
+  openExternal: (url: string) => void;
 }
 
 interface Window {
