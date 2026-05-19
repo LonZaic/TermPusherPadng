@@ -3,6 +3,7 @@ interface TabInfo {
   name: string;
   projectPath: string | null;
   cwd: string;
+  type: 'terminal' | 'canvas';
 }
 
 interface SessionEntry {
@@ -40,6 +41,13 @@ interface ElectronAPI {
   openNewWindow: (projectPath: string | null) => Promise<void>;
   getConnectionInfo: () => Promise<{ ip: string; port: number }>;
   scanSessions: () => Promise<SessionScanResult>;
+  createCanvasTab: () => Promise<TabInfo>;
+  spawnAiPty: (tabId: string) => Promise<{ success: boolean }>;
+  killAiPty: (tabId: string) => Promise<{ success: boolean }>;
+  aiPtyWrite: (tabId: string, content: string) => void;
+  aiPtyResize: (tabId: string, cols: number, rows: number) => void;
+  onAiPtyOutput: (callback: (tabId: string, data: string) => void) => () => void;
+  onAiPtyExited: (callback: (tabId: string, exitCode: number) => void) => () => void;
   openExternal: (url: string) => void;
 }
 

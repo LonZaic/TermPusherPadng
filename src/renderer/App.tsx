@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import TerminalPanel from './TerminalPanel';
+import CanvasPanel from './CanvasPanel';
 import CommandPanel from './CommandPanel';
 import TabBar from './TabBar';
 import NewConversationDialog from './NewConversationDialog';
@@ -14,6 +15,7 @@ interface TabState {
   projectPath: string | null;
   cwd: string;
   color: TabColor;
+  type: 'terminal' | 'canvas';
 }
 
 function App() {
@@ -116,13 +118,18 @@ function App() {
   const handleDialogConfirm = useCallback(async (
     projectPath: string | null,
     openInNewWindow: boolean,
+    tabType?: 'terminal' | 'canvas',
   ) => {
     setDialogOpen(false);
-    if (projectPath) addRecentProject(projectPath);
-    if (openInNewWindow) {
-      await window.electronAPI.openNewWindow(projectPath);
+    if (tabType === 'canvas') {
+      await window.electronAPI.createCanvasTab();
     } else {
-      await window.electronAPI.createTab(projectPath, null);
+      if (projectPath) addRecentProject(projectPath);
+      if (openInNewWindow) {
+        await window.electronAPI.openNewWindow(projectPath);
+      } else {
+        await window.electronAPI.createTab(projectPath, null);
+      }
     }
   }, []);
 
@@ -162,12 +169,19 @@ function App() {
           {loading ? (
             <div className="loading-hint">正在连接终端...</div>
           ) : activeTabId ? (
-            <TerminalPanel
-              key={activeTabId}
-              ref={termRef}
-              tabId={activeTabId}
-              onCommandCapture={handleCommandCapture}
-            />
+            activeTab.type === 'canvas' ? (
+              <CanvasPanel
+                key={activeTabId}
+                tabId={activeTabId}
+              />
+            ) : (
+              <TerminalPanel
+                key={activeTabId}
+                ref={termRef}
+                tabId={activeTabId}
+                onCommandCapture={handleCommandCapture}
+              />
+            )
           ) : (
             <div className="loading-hint">点击 + 新建标签</div>
           )}

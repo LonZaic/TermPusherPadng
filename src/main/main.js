@@ -46,7 +46,7 @@ function createTab(winState, projectPath, tabName) {
   const folderName = projectPath ? path.basename(projectPath) : 'Terminal';
   const name = tabName || folderName;
 
-  winState.tabs.set(tabId, { ptyProcess, projectPath, name, cwd });
+  winState.tabs.set(tabId, { type: 'terminal', ptyProcess, projectPath, name, cwd });
   winState.tabOrder.push(tabId);
 
   ptyProcess.onData((data) => {
@@ -64,7 +64,24 @@ function createTab(winState, projectPath, tabName) {
   const bw = winState.win;
   if (bw && !bw.isDestroyed()) {
     bw.webContents.send('tab-created', {
-      tabId, name, projectPath, cwd,
+      tabId, name, projectPath, cwd, type: 'terminal',
+    });
+  }
+
+  return tabId;
+}
+
+function createCanvasTab(winState) {
+  const tabId = generateTabId();
+  const name = '画板';
+
+  winState.tabs.set(tabId, { type: 'canvas', name, projectPath: null, cwd: '', aiPtyProcess: null });
+  winState.tabOrder.push(tabId);
+
+  const bw = winState.win;
+  if (bw && !bw.isDestroyed()) {
+    bw.webContents.send('tab-created', {
+      tabId, name, projectPath: null, cwd: '', type: 'canvas',
     });
   }
 
@@ -74,7 +91,12 @@ function createTab(winState, projectPath, tabName) {
 function closeTab(winState, tabId) {
   const tab = winState.tabs.get(tabId);
   if (!tab) return;
-  try { tab.ptyProcess.kill(); } catch (_) { /* ignore */ }
+  if (tab.type === 'terminal') {
+    try { tab.ptyProcess.kill(); } catch (_) { /* ignore */ }
+  }
+  if (tab.aiPtyProcess) {
+    try { tab.aiPtyProcess.kill(); } catch (_) { /* ignore */ }
+  }
   winState.tabs.delete(tabId);
   const idx = winState.tabOrder.indexOf(tabId);
   if (idx !== -1) winState.tabOrder.splice(idx, 1);
@@ -93,7 +115,12 @@ function closeTab(winState, tabId) {
 
 function killAllPtysForWindow(winState) {
   for (const [, tab] of winState.tabs) {
-    try { tab.ptyProcess.kill(); } catch (_) { /* ignore */ }
+    if (tab.type === 'terminal' || tab.ptyProcess) {
+      try { tab.ptyProcess.kill(); } catch (_) { /* ignore */ }
+    }
+    if (tab.aiPtyProcess) {
+      try { tab.aiPtyProcess.kill(); } catch (_) { /* ignore */ }
+    }
   }
   winState.tabs.clear();
   winState.tabOrder.length = 0;
@@ -201,6 +228,23 @@ function buildMenu() {
         { role: 'togglefullscreen' },
       ],
     },
+    {
+      label: 'Draw',
+      submenu: [
+        {
+          label: 'New Canvas',
+          accelerator: 'CmdOrCtrl+Shift+D',
+          click: () => {
+            const win = BrowserWindow.getFocusedWindow();
+            const ws = getWindowState(win);
+            if (!ws) return;
+            const tabId = createCanvasTab(ws);
+            ws.activeTabId = tabId;
+            ws.win.webContents.send('activate-tab', tabId);
+          },
+        },
+      ],
+    },
   ];
 
   const menu = Menu.buildFromTemplate(template);
@@ -267,9 +311,9 @@ ipcMain.on('write-to-terminal', (event, { tabId, content }) => {
     return;
   }
   const tab = ws.tabs.get(tabId);
-  if (!tab) {
+  if (!tab || tab.type !== 'terminal') {
     if (!event.sender.isDestroyed()) {
-      event.reply('write-complete', { success: false, error: 'Tab not found' });
+      event.reply('write-complete', { success: false, error: 'Tab not found or not a terminal' });
     }
     return;
   }
@@ -297,7 +341,7 @@ ipcMain.on('pty-resize', (event, { tabId, cols, rows }) => {
   const ws = getWindowForEvent(event);
   if (!ws) return;
   const tab = ws.tabs.get(tabId);
-  if (tab) tab.ptyProcess.resize(cols, rows);
+  if (tab && tab.type === 'terminal') tab.ptyProcess.resize(cols, rows);
 });
 
 ipcMain.handle('create-tab', (event, { projectPath, tabName }) => {
@@ -306,7 +350,80 @@ ipcMain.handle('create-tab', (event, { projectPath, tabName }) => {
   const tabId = createTab(ws, projectPath || null, tabName || null);
   ws.activeTabId = tabId;
   const tab = ws.tabs.get(tabId);
-  return { tabId, name: tab.name, projectPath: tab.projectPath, cwd: tab.cwd };
+  return { tabId, name: tab.name, projectPath: tab.projectPath, cwd: tab.cwd, type: tab.type };
+});
+
+ipcMain.handle('create-canvas-tab', (event) => {
+  const ws = getWindowForEvent(event);
+  if (!ws) throw new Error('Window not found');
+  const tabId = createCanvasTab(ws);
+  ws.activeTabId = tabId;
+  const tab = ws.tabs.get(tabId);
+  return { tabId, name: tab.name, projectPath: tab.projectPath, cwd: tab.cwd, type: tab.type };
+});
+
+ipcMain.handle('spawn-ai-pty', (event, { tabId }) => {
+  const ws = getWindowForEvent(event);
+  if (!ws) throw new Error('Window not found');
+  const tab = ws.tabs.get(tabId);
+  if (!tab || tab.type !== 'canvas') throw new Error('Tab not found or not a canvas');
+  if (tab.aiPtyProcess) {
+    try { tab.aiPtyProcess.kill(); } catch (_) { /* ignore */ }
+  }
+  const aiPty = spawnPty(tab.cwd || process.env.USERPROFILE);
+  tab.aiPtyProcess = aiPty;
+  aiPty.onData((data) => {
+    const bw = ws.win;
+    if (bw && !bw.isDestroyed()) {
+      bw.webContents.send('ai-pty-output', { tabId, data });
+    }
+  });
+  aiPty.onExit(({ exitCode }) => {
+    console.log(`AI PTY ${tabId} exited with code ${exitCode}`);
+    tab.aiPtyProcess = null;
+    const bw = ws.win;
+    if (bw && !bw.isDestroyed()) {
+      bw.webContents.send('ai-pty-exited', { tabId, exitCode });
+    }
+  });
+  return { success: true };
+});
+
+ipcMain.handle('kill-ai-pty', (event, { tabId }) => {
+  const ws = getWindowForEvent(event);
+  if (!ws) throw new Error('Window not found');
+  const tab = ws.tabs.get(tabId);
+  if (tab && tab.aiPtyProcess) {
+    try { tab.aiPtyProcess.kill(); } catch (_) { /* ignore */ }
+    tab.aiPtyProcess = null;
+  }
+  return { success: true };
+});
+
+ipcMain.on('ai-pty-write', (event, { tabId, content }) => {
+  const ws = getWindowForEvent(event);
+  if (!ws) return;
+  const tab = ws.tabs.get(tabId);
+  if (!tab || !tab.aiPtyProcess) return;
+  const p = tab.aiPtyProcess;
+  (async () => {
+    let offset = 0;
+    while (offset < content.length) {
+      const end = Math.min(offset + CHUNK_SIZE, content.length);
+      p.write(content.slice(offset, end));
+      offset = end;
+      if (offset < content.length) await sleep(CHUNK_DELAY_MS);
+    }
+  })().catch((err) => {
+    console.error('AI PTY write error:', err.message);
+  });
+});
+
+ipcMain.on('ai-pty-resize', (event, { tabId, cols, rows }) => {
+  const ws = getWindowForEvent(event);
+  if (!ws) return;
+  const tab = ws.tabs.get(tabId);
+  if (tab && tab.aiPtyProcess) tab.aiPtyProcess.resize(cols, rows);
 });
 
 ipcMain.handle('open-new-window', (_event, { projectPath }) => {
@@ -341,7 +458,8 @@ ipcMain.handle('get-tabs', (event) => {
         tabId,
         name: tab.name,
         projectPath: tab.projectPath,
-        cwd: tab.cwd,
+        cwd: tab.cwd || '',
+        type: tab.type || 'terminal',
       });
     }
   }

@@ -1126,3 +1126,242 @@ html, body, #root {
 .btn-save:hover {
   background: #2a7aff;
 }
+
+/* ---- Canvas Panel ---- */
+.canvas-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.canvas-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #585b70;
+  font-size: 13px;
+}
+
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #313244;
+  border-bottom: 1px solid #45475a;
+  flex-shrink: 0;
+  min-height: 36px;
+}
+
+.canvas-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-toolbar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a6adc8;
+}
+
+.canvas-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.canvas-tool-btn {
+  padding: 4px 10px;
+  border: 1px solid #45475a;
+  border-radius: 5px;
+  background: #45475a;
+  color: #cdd6f4;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.canvas-tool-btn:hover {
+  background: #585b70;
+  border-color: #6c7086;
+  color: #fff;
+}
+
+.canvas-roughness-select {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #585b70;
+  background: #45475a;
+  color: #cdd6f4;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+}
+.canvas-roughness-select:hover {
+  background: #585b70;
+}
+.canvas-roughness-select:focus {
+  border-color: #89b4fa;
+}
+
+.canvas-ai-toggle.active {
+  background: #1e66f5;
+  border-color: #1e66f5;
+  color: #fff;
+}
+
+.canvas-main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.canvas-excalidraw {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+}
+
+/* Excalidraw overrides — light UI on dark app */
+.canvas-excalidraw .excalidraw {
+  --color-primary: #1e66f5;
+  --color-primary-dark: #1452cc;
+  --color-surface-low: #f8f8f8;
+  --color-surface-mid: #f0f0f0;
+  --color-surface-high: #e8e8e8;
+  --button-gray-1: #e0e0e0;
+  --button-gray-2: #d0d0d0;
+  --button-gray-3: #c0c0c0;
+  --island-bg-color: #ffffff;
+  --color-icon-base: #333333;
+  --color-icon-fill: #333333;
+  --default-bg-color: #ffffff;
+  --color-surface-primary-container: #f0f0f0;
+  --input-bg-color: #ffffff;
+  --color-canvas-background: #ffffff;
+}
+
+/* Force all bars/islands to white bg */
+.canvas-excalidraw .excalidraw .Island,
+.canvas-excalidraw .excalidraw .Stack,
+.canvas-excalidraw .excalidraw .App-toolbar,
+.canvas-excalidraw .excalidraw .App-bottom-bar,
+.canvas-excalidraw .excalidraw .library-menu-items-container {
+  --island-bg-color: #ffffff;
+  background-color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+
+/* All buttons inside islands — white bg, dark icons */
+.canvas-excalidraw .excalidraw .Stack button,
+.canvas-excalidraw .excalidraw .Island button,
+.canvas-excalidraw .excalidraw .App-toolbar button,
+.canvas-excalidraw .excalidraw .App-bottom-bar button,
+.canvas-excalidraw .excalidraw .ToolIcon,
+.canvas-excalidraw .excalidraw .library-button {
+  color: #333333;
+}
+
+.canvas-excalidraw .excalidraw .Stack button:hover,
+.canvas-excalidraw .excalidraw .Island button:hover,
+.canvas-excalidraw .excalidraw .App-toolbar button:hover,
+.canvas-excalidraw .excalidraw .App-bottom-bar button:hover,
+.canvas-excalidraw .excalidraw .ToolIcon:hover,
+.canvas-excalidraw .excalidraw .library-button:hover {
+  background-color: #e8e8e8;
+}
+
+/* Only set bg on toolbar action buttons, NOT color swatches */
+.canvas-excalidraw .excalidraw .ToolIcon,
+.canvas-excalidraw .excalidraw .ToolIcon_type_button,
+.canvas-excalidraw .excalidraw button.ToolIcon_type_button {
+  background-color: #f0f0f0;
+}
+.canvas-excalidraw .excalidraw .ToolIcon:hover {
+  background-color: #e0e0e0;
+}
+
+/* SVG icons — dark fills for light bg */
+.canvas-excalidraw .excalidraw .Stack button svg,
+.canvas-excalidraw .excalidraw .Island button svg,
+.canvas-excalidraw .excalidraw .App-toolbar button svg,
+.canvas-excalidraw .excalidraw .App-bottom-bar button svg {
+  color: #333333;
+  fill: #333333;
+}
+
+.canvas-excalidraw .excalidraw .ToolIcon__icon {
+  background-color: transparent !important;
+}
+
+.canvas-excalidraw .excalidraw .zoom-actions,
+.canvas-excalidraw .excalidraw .undo-redo,
+.canvas-excalidraw .excalidraw .reset-zoom-button {
+  background-color: #ffffff;
+}
+
+/* Active tool indicator */
+.canvas-excalidraw .excalidraw .ToolIcon.active,
+.canvas-excalidraw .excalidraw .App-toolbar .active {
+  background-color: #1e66f5 !important;
+  color: #ffffff !important;
+}
+.canvas-excalidraw .excalidraw .ToolIcon.active svg,
+.canvas-excalidraw .excalidraw .App-toolbar .active svg {
+  color: #ffffff;
+  fill: #ffffff;
+}
+
+.canvas-ai-panel {
+  width: 300px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #313244;
+  background: #11111b;
+}
+
+.canvas-ai-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #a6adc8;
+  border-bottom: 1px solid #313244;
+  flex-shrink: 0;
+}
+
+.canvas-ai-close {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #6c7086;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.12s ease;
+}
+
+.canvas-ai-close:hover {
+  background: #313244;
+  color: #cdd6f4;
+}
+
+.canvas-ai-terminal {
+  flex: 1;
+  overflow: hidden;
+  padding: 4px;
+}

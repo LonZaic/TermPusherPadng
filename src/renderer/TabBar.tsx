@@ -7,6 +7,7 @@ interface Tab {
   name: string;
   projectPath: string | null;
   color: TabColor;
+  type: 'terminal' | 'canvas';
 }
 
 interface TabBarProps {
@@ -45,7 +46,7 @@ function TabBar({ tabs, activeTabId, onSwitch, onClose, onNewConversation }: Tab
               title={tab.projectPath || tab.name}
             >
               <span className="tab-label">
-                {tab.name}
+                {tab.type === 'canvas' ? '\u{1F3A8} ' : ''}{tab.name}
               </span>
               {tabs.length > 1 && (
                 <button

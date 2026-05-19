@@ -27,6 +27,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('create-tab', { projectPath, tabName });
   },
 
+  createCanvasTab: () => {
+    return ipcRenderer.invoke('create-canvas-tab');
+  },
+
   closeTab: (tabId) => {
     return ipcRenderer.invoke('close-tab', { tabId });
   },
@@ -70,6 +74,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Session history
   scanSessions: () => {
     return ipcRenderer.invoke('scan-sessions');
+  },
+
+  // AI PTY for canvas tabs
+  spawnAiPty: (tabId) => {
+    return ipcRenderer.invoke('spawn-ai-pty', { tabId });
+  },
+
+  killAiPty: (tabId) => {
+    return ipcRenderer.invoke('kill-ai-pty', { tabId });
+  },
+
+  aiPtyWrite: (tabId, content) => {
+    ipcRenderer.send('ai-pty-write', { tabId, content });
+  },
+
+  aiPtyResize: (tabId, cols, rows) => {
+    ipcRenderer.send('ai-pty-resize', { tabId, cols, rows });
+  },
+
+  onAiPtyOutput: (callback) => {
+    const handler = (_event, { tabId, data }) => callback(tabId, data);
+    ipcRenderer.on('ai-pty-output', handler);
+    return () => ipcRenderer.removeListener('ai-pty-output', handler);
+  },
+
+  onAiPtyExited: (callback) => {
+    const handler = (_event, { tabId, exitCode }) => callback(tabId, exitCode);
+    ipcRenderer.on('ai-pty-exited', handler);
+    return () => ipcRenderer.removeListener('ai-pty-exited', handler);
   },
 
   // External links

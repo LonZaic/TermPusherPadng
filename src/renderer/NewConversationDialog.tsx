@@ -5,10 +5,10 @@ interface NewConversationDialogProps {
   currentProjectPath: string | null;
   currentProjectName: string;
   onClose: () => void;
-  onConfirm: (projectPath: string | null, openInNewWindow: boolean) => void;
+  onConfirm: (projectPath: string | null, openInNewWindow: boolean, tabType?: 'terminal' | 'canvas') => void;
 }
 
-type Step = 'project' | 'window';
+type Step = 'type' | 'project' | 'window';
 
 function NewConversationDialog({
   open,
@@ -17,15 +17,25 @@ function NewConversationDialog({
   onClose,
   onConfirm,
 }: NewConversationDialogProps) {
-  const [step, setStep] = useState<Step>('project');
+  const [step, setStep] = useState<Step>('type');
   const [inheritProject, setInheritProject] = useState<boolean | null>(null);
 
   if (!open) return null;
 
   const handleClose = () => {
-    setStep('project');
+    setStep('type');
     setInheritProject(null);
     onClose();
+  };
+
+  const handleTypeChoice = (tabType: 'terminal' | 'canvas') => {
+    if (tabType === 'canvas') {
+      onConfirm(null, false, 'canvas');
+      setStep('type');
+      setInheritProject(null);
+    } else {
+      setStep('project');
+    }
   };
 
   const handleProjectChoice = (inherit: boolean) => {
@@ -35,8 +45,8 @@ function NewConversationDialog({
 
   const handleWindowChoice = (newWindow: boolean) => {
     const projectPath = inheritProject ? currentProjectPath : null;
-    onConfirm(projectPath, newWindow);
-    setStep('project');
+    onConfirm(projectPath, newWindow, 'terminal');
+    setStep('type');
     setInheritProject(null);
   };
 
@@ -44,11 +54,34 @@ function NewConversationDialog({
     <div className="dialog-overlay" onClick={handleClose}>
       <div className="dialog nc-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="dialog-header">
-          <h3>新建对话</h3>
+          <h3>新建</h3>
           <button className="dialog-close" onClick={handleClose}>✕</button>
         </div>
 
         <div className="dialog-body">
+          {step === 'type' && (
+            <div className="nc-step">
+              <p className="nc-question">选择新建类型</p>
+              <div className="nc-choices">
+                <button
+                  className="btn nc-btn nc-btn-primary"
+                  onClick={() => handleTypeChoice('terminal')}
+                >
+                  终端对话
+                </button>
+                <button
+                  className="btn nc-btn"
+                  onClick={() => handleTypeChoice('canvas')}
+                >
+                  画板
+                </button>
+              </div>
+              <button className="btn nc-btn-back" onClick={handleClose}>
+                取消
+              </button>
+            </div>
+          )}
+
           {step === 'project' && (
             <div className="nc-step">
               <p className="nc-question">
@@ -86,8 +119,11 @@ function NewConversationDialog({
                   </button>
                 )}
               </div>
-              <button className="btn nc-btn-back" onClick={handleClose}>
-                取消
+              <button
+                className="btn nc-btn-back"
+                onClick={() => setStep('type')}
+              >
+                ← 返回上一步
               </button>
             </div>
           )}
