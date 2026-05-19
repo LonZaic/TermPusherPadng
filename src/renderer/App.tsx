@@ -38,7 +38,7 @@ function App() {
   return (
     <div className="app">
       <div className="toolbar">
-        <div className="toolbar-title">Term Pusher</div>
+        <div className="toolbar-title">TermPusherPad</div>
         <div className="toolbar-status">
           <span className={`status-dot ${writing ? 'writing' : 'idle'}`} />
           <span className="status-text">{status}</span>
