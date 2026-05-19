@@ -1,0 +1,126 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #1e1e2e;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #181825;
+  border-bottom: 1px solid #313244;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.app-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #cba6f7;
+  letter-spacing: 0.5px;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  padding: 7px 18px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: #cdd6f4;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-short {
+  background: #45475a;
+}
+
+.btn-short:hover:not(:disabled) {
+  background: #585b70;
+}
+
+.btn-long {
+  background: #1e66f5;
+}
+
+.btn-long:hover:not(:disabled) {
+  background: #2a7bff;
+}
+
+.status {
+  margin-left: auto;
+  font-size: 12px;
+  color: #6c7086;
+  transition: color 0.2s;
+}
+
+.status.writing {
+  color: #f9e2af;
+}
+
+.terminal-wrapper {
+  flex: 1;
+  overflow: hidden;
+  padding: 4px;
+}
+
+.terminal-container {
+  width: 100%;
+  height: 100%;
+}
+
+.terminal-container .xterm {
+  height: 100%;
+  padding: 4px;
+}
+
+.xterm-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: #45475a transparent;
+}
+
+.xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+
+.xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: #45475a;
+  border-radius: 4px;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: #585b70;
+}
