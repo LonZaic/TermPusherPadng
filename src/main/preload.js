@@ -66,4 +66,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getConnectionInfo: () => {
     return ipcRenderer.invoke('get-connection-info');
   },
+
+  // Session history
+  scanSessions: () => {
+    return ipcRenderer.invoke('scan-sessions');
+  },
 });

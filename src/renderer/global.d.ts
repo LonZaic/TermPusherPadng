@@ -5,6 +5,26 @@ interface TabInfo {
   cwd: string;
 }
 
+interface SessionEntry {
+  id: string;
+  tool: 'cc' | 'codex' | 'reasonix';
+  toolName: string;
+  title: string;
+  subtitle: string;
+  cwd: string;
+  startedAt: number;
+  updatedAt: number;
+  kind: string;
+  status: string;
+}
+
+interface SessionScanResult {
+  cc: SessionEntry[];
+  codex: SessionEntry[];
+  reasonix: SessionEntry[];
+  total: number;
+}
+
 interface ElectronAPI {
   writeToTerminal: (tabId: string, content: string) => void;
   onPtyOutput: (callback: (tabId: string, data: string) => void) => () => void;
@@ -19,6 +39,7 @@ interface ElectronAPI {
   onActivateTab: (callback: (tabId: string) => void) => () => void;
   openNewWindow: (projectPath: string | null) => Promise<void>;
   getConnectionInfo: () => Promise<{ ip: string; port: number }>;
+  scanSessions: () => Promise<SessionScanResult>;
 }
 
 interface Window {

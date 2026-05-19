@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, Menu, dialog } = require('electron');
 const path = require('path');
 const os = require('os');
 const pty = require('node-pty');
+const { scanAllSessions } = require('./sessionScanner');
 
 const CHUNK_SIZE = 4096;
 const CHUNK_DELAY_MS = 10;
@@ -353,6 +354,10 @@ ipcMain.handle('get-initial-project', () => {
 
 ipcMain.handle('get-connection-info', () => {
   return { ip: getLocalIP(), port: 5173 };
+});
+
+ipcMain.handle('scan-sessions', () => {
+  return scanAllSessions();
 });
 
 // ---- App lifecycle ----

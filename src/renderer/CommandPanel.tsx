@@ -38,6 +38,24 @@ const QUICK_WORKFLOWS = [
   { id: 'wf-rx', label: 'Reasonix', command: 'reasonix code', toolId: 'reasonix' },
 ];
 
+const SESSION_RESUME_COMMAND: Record<string, (id: string) => string> = {
+  cc: (id) => `claude -r "${id}"`,
+  codex: (id) => `codex resume ${id}`,
+  reasonix: (id) => `reasonix -c "${id}"`,
+};
+
+function formatTimeAgo(ts: number): string {
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return `${mins} 分钟前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} 天前`;
+  return new Date(ts).toLocaleDateString('zh-CN');
+}
+
 function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOpen }: CommandPanelProps) {
   const [activeTool, setActiveTool] = useState(TOOL_GROUPS[0]?.id ?? 'cc');
   const [activeTab, setActiveTab] = useState('');
@@ -49,7 +67,13 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>(getRecentProjects);
   const [showRecentProjects, setShowRecentProjects] = useState(false);
 
+  // Session history state
+  const [sessions, setSessions] = useState<SessionScanResult | null>(null);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState<string>('all');
+
   const isSearching = searchQuery.trim().length > 0;
+  const isHistory = activeTool === 'history';
 
   const currentTool = TOOL_GROUPS.find((t) => t.id === activeTool);
   const showCustom = activeTool === 'custom';
@@ -81,7 +105,6 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
     const base = isCustomTool
       ? []
       : [...(currentTool?.categories ?? [])];
-    // Insert recent commands as first category (not for custom tool)
     const withRecent = isCustomTool
       ? [customCategory]
       : recentCategory.commands.length > 0
@@ -100,6 +123,19 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
       setActiveTab(categories[0].id);
     }
   }, [activeTool]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load sessions when switching to history tab
+  useEffect(() => {
+    if (isHistory && !sessions) {
+      setSessionsLoading(true);
+      window.electronAPI.scanSessions().then((data) => {
+        setSessions(data);
+        setSessionsLoading(false);
+      }).catch(() => {
+        setSessionsLoading(false);
+      });
+    }
+  }, [isHistory, sessions]);
 
   const handleAddCustom = useCallback((name: string, command: string) => {
     const newCmd: CustomCommand = {
@@ -144,12 +180,31 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
     onWriteCommand(cmd);
   }, [onWriteCommand]);
 
+  // Session resume handler
+  const handleSessionResume = useCallback((tool: string, id: string) => {
+    const cmdFn = SESSION_RESUME_COMMAND[tool];
+    if (cmdFn) {
+      handleCommandClick(cmdFn(id));
+    }
+  }, [handleCommandClick]);
+
+  // Refresh sessions
+  const handleRefreshSessions = useCallback(() => {
+    setSessions(null);
+    setSessionsLoading(true);
+    window.electronAPI.scanSessions().then((data) => {
+      setSessions(data);
+      setSessionsLoading(false);
+    }).catch(() => {
+      setSessionsLoading(false);
+    });
+  }, []);
+
   // Search across all tools
   const searchResults = useMemo(() => {
     if (!isSearching) return [];
     const q = searchQuery.trim().toLowerCase();
     const results: Array<{ command: string; description: string; toolName: string; toolId: string }> = [];
-    // Search built-in commands
     for (const tool of TOOL_GROUPS) {
       for (const cat of tool.categories) {
         for (const cmd of cat.commands) {
@@ -167,7 +222,6 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
         }
       }
     }
-    // Search custom commands
     for (const cmd of customCommands) {
       if (
         cmd.command.toLowerCase().includes(q) ||
@@ -190,8 +244,8 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
     return [...commands].sort((a, b) => {
       const fa = freqs[a.command] || 0;
       const fb = freqs[b.command] || 0;
-      if (fa !== fb) return fb - fa; // higher freq first
-      return 0; // preserve original order for equal freq
+      if (fa !== fb) return fb - fa;
+      return 0;
     });
   }, []);
 
@@ -203,10 +257,24 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
 
   const handleProjectClick = useCallback((projectPath: string) => {
     onProjectOpen?.(projectPath);
-    // cd into project first, then we'd need shell integration
-    // For now, write the cd command
     onWriteCommand(`cd /d "${projectPath}"`);
   }, [onProjectOpen, onWriteCommand]);
+
+  // Build filtered session list for history view
+  const filteredSessions = useMemo(() => {
+    if (!sessions) return [];
+    if (historyFilter === 'all') {
+      const all: Array<SessionEntry & { tool: string }> = [];
+      for (const s of sessions.cc) all.push({ ...s, tool: s.tool });
+      for (const s of sessions.codex) all.push({ ...s, tool: s.tool });
+      for (const s of sessions.reasonix) all.push({ ...s, tool: s.tool });
+      all.sort((a, b) => b.updatedAt - a.updatedAt);
+      return all;
+    }
+    const list = sessions[historyFilter as keyof SessionScanResult];
+    if (!Array.isArray(list)) return [];
+    return [...list].sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [sessions, historyFilter]);
 
   return (
     <div className="command-panel">
@@ -276,9 +344,14 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
         </div>
       )}
 
-      {/* Header: tool selector + title */}
+      {/* Header */}
       <div className="command-panel-header">
-        <span className="command-panel-title">命令面板</span>
+        <span className="command-panel-title">{isHistory ? '历史对话' : '命令面板'}</span>
+        {isHistory && (
+          <button className="session-refresh-btn" onClick={handleRefreshSessions} title="刷新">
+            &#x21BB;
+          </button>
+        )}
       </div>
 
       {/* Search results mode */}
@@ -305,6 +378,74 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
             ))
           )}
         </div>
+      ) : isHistory ? (
+        <>
+          {/* History tool filter */}
+          <div className="history-filter">
+            <button
+              className={`history-filter-btn ${historyFilter === 'all' ? 'active' : ''}`}
+              onClick={() => setHistoryFilter('all')}
+            >
+              全部
+            </button>
+            <button
+              className={`history-filter-btn ${historyFilter === 'cc' ? 'active' : ''}`}
+              onClick={() => setHistoryFilter('cc')}
+            >
+              Claude Code
+            </button>
+            <button
+              className={`history-filter-btn ${historyFilter === 'codex' ? 'active' : ''}`}
+              onClick={() => setHistoryFilter('codex')}
+            >
+              Codex
+            </button>
+            <button
+              className={`history-filter-btn ${historyFilter === 'reasonix' ? 'active' : ''}`}
+              onClick={() => setHistoryFilter('reasonix')}
+            >
+              Reasonix
+            </button>
+          </div>
+
+          {/* Session list */}
+          <div className="command-list">
+            {sessionsLoading ? (
+              <div className="command-empty">正在扫描会话...</div>
+            ) : sessions === null ? (
+              <div className="command-empty">加载会话失败</div>
+            ) : filteredSessions.length === 0 ? (
+              <div className="command-empty">
+                {sessions.total === 0
+                  ? '未找到历史会话，在终端中使用 CLI 工具后会自动出现'
+                  : '当前筛选下无会话'}
+              </div>
+            ) : (
+              filteredSessions.map((s) => (
+                <div key={`${s.tool}-${s.id}`} className="session-item">
+                  <div className="session-info">
+                    <div className="session-header">
+                      <span className={`search-tag search-tag-${s.tool}`}>{s.toolName}</span>
+                      <span className="session-time">{formatTimeAgo(s.updatedAt)}</span>
+                    </div>
+                    <div className="session-title" title={s.title}>{s.title}</div>
+                    {s.subtitle && (
+                      <div className="session-subtitle" title={s.subtitle}>{s.subtitle}</div>
+                    )}
+                  </div>
+                  <button
+                    className="session-resume-btn"
+                    onClick={() => handleSessionResume(s.tool, s.id)}
+                    disabled={writing}
+                    title="恢复此会话"
+                  >
+                    恢复
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </>
       ) : (
         <>
           {/* Tool selector */}
@@ -324,6 +465,13 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
               onClick={() => setActiveTool('custom')}
             >
               自定义
+            </button>
+            <button
+              key="history-tool"
+              className={`tool-selector-btn history-tool-btn ${activeTool === 'history' ? 'active' : ''}`}
+              onClick={() => setActiveTool('history')}
+            >
+              历史
             </button>
           </div>
 
