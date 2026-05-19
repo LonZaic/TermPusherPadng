@@ -105,6 +105,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('ai-pty-exited', handler);
   },
 
+  // Theme
+  onOpenTheme: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('open-theme', handler);
+    return () => ipcRenderer.removeListener('open-theme', handler);
+  },
+
   // External links
   openExternal: (url) => {
     ipcRenderer.send('open-external', url);

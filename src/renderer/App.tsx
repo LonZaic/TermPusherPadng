@@ -4,9 +4,12 @@ import CanvasPanel from './CanvasPanel';
 import CommandPanel from './CommandPanel';
 import TabBar from './TabBar';
 import NewConversationDialog from './NewConversationDialog';
+import ThemeDialog from './ThemeDialog';
 import { assignTabColor } from './tabColors';
 import type { TabColor } from './tabColors';
 import { addRecentCommand, addRecentProject } from './commandTracker';
+import { DEFAULT_THEME, applyTheme } from './themeEngine';
+import type { ThemeState } from './themeEngine';
 import './App.css';
 
 interface TabState {
@@ -24,6 +27,9 @@ function App() {
   const [writing, setWriting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [theme, setTheme] = useState<ThemeState>(DEFAULT_THEME);
+  const [themeVersion, setThemeVersion] = useState(0);
   const termRef = useRef<{ focus: () => void }>(null);
 
   const activeTab = tabs.find((t) => t.tabId === activeTabId);
@@ -88,6 +94,24 @@ function App() {
     return cleanup;
   }, []);
 
+  // Load theme from localStorage and apply
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('app-theme');
+      if (raw) {
+        const saved: ThemeState = JSON.parse(raw);
+        setTheme(saved);
+        applyTheme(saved);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  // Listen for theme menu IPC
+  useEffect(() => {
+    const unsub = window.electronAPI.onOpenTheme(() => setThemeOpen(true));
+    return () => { if (unsub) unsub(); };
+  }, []);
+
   // Handle new window initial project
   useEffect(() => {
     const hash = window.location.hash;
@@ -145,46 +169,78 @@ function App() {
     addRecentCommand(command, 'terminal');
   }, []);
 
+  const handleThemeApply = useCallback((t: ThemeState) => {
+    setTheme(t);
+    setThemeVersion((v) => v + 1);
+    applyTheme(t);
+    try { localStorage.setItem('app-theme', JSON.stringify(t)); } catch { /* ignore */ }
+  }, []);
+
   const handleProjectOpen = useCallback((projectPath: string) => {
     addRecentProject(projectPath);
   }, []);
 
+  const glassActive = theme.mode === 'image' && theme.glassEnabled && theme.backgroundImage;
+  const bgStyle: React.CSSProperties = {};
+  if (theme.mode === 'gradient' && theme.gradientColors.length >= 2) {
+    bgStyle.background = `linear-gradient(${theme.gradientAngle}deg, ${theme.gradientColors.join(', ')})`;
+  } else if (theme.mode === 'image' && theme.backgroundImage) {
+    bgStyle.backgroundImage = `url(${theme.backgroundImage})`;
+    bgStyle.backgroundSize = 'cover';
+    bgStyle.backgroundPosition = 'center';
+  } else {
+    bgStyle.background = theme.solidColor || DEFAULT_THEME.solidColor;
+  }
+
   return (
-    <div className="app">
-      <TabBar
-        tabs={tabs}
-        activeTabId={activeTabId}
-        onSwitch={handleSwitchTab}
-        onClose={handleCloseTab}
-        onNewConversation={handleNewConversation}
-      />
-      <div className="main-content">
-        <CommandPanel
-          onWriteCommand={handleWriteCommand}
-          writing={writing}
-          currentProjectPath={activeTab?.projectPath || null}
-          onProjectOpen={handleProjectOpen}
+    <div className="app" style={bgStyle}>
+      {glassActive && (
+        <div
+          className="app-glass-layer active"
+          style={{
+            background: `${theme.glassColor}${Math.round(theme.glassOpacity * 255).toString(16).padStart(2, '0')}`,
+            backdropFilter: `blur(${theme.glassBlur}px)`,
+            WebkitBackdropFilter: `blur(${theme.glassBlur}px)`,
+          }}
         />
-        <div className="terminal-wrapper">
-          {loading ? (
-            <div className="loading-hint">正在连接终端...</div>
-          ) : activeTabId ? (
-            activeTab.type === 'canvas' ? (
-              <CanvasPanel
-                key={activeTabId}
-                tabId={activeTabId}
-              />
+      )}
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <TabBar
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onSwitch={handleSwitchTab}
+          onClose={handleCloseTab}
+          onNewConversation={handleNewConversation}
+        />
+        <div className="main-content">
+          <CommandPanel
+            onWriteCommand={handleWriteCommand}
+            writing={writing}
+            currentProjectPath={activeTab?.projectPath || null}
+            onProjectOpen={handleProjectOpen}
+          />
+          <div className="terminal-wrapper">
+            {loading ? (
+              <div className="loading-hint">正在连接终端...</div>
+            ) : activeTabId ? (
+              activeTab.type === 'canvas' ? (
+                <CanvasPanel
+                  key={activeTabId}
+                  tabId={activeTabId}
+                />
+              ) : (
+                <TerminalPanel
+                  key={activeTabId}
+                  ref={termRef}
+                  tabId={activeTabId}
+                  themeVersion={themeVersion}
+                  onCommandCapture={handleCommandCapture}
+                />
+              )
             ) : (
-              <TerminalPanel
-                key={activeTabId}
-                ref={termRef}
-                tabId={activeTabId}
-                onCommandCapture={handleCommandCapture}
-              />
-            )
-          ) : (
-            <div className="loading-hint">点击 + 新建标签</div>
-          )}
+              <div className="loading-hint">点击 + 新建标签</div>
+            )}
+          </div>
         </div>
       </div>
       <NewConversationDialog
@@ -193,6 +249,12 @@ function App() {
         currentProjectName={activeTab?.projectPath ? activeTab.name : ''}
         onClose={() => setDialogOpen(false)}
         onConfirm={handleDialogConfirm}
+      />
+      <ThemeDialog
+        open={themeOpen}
+        onClose={() => setThemeOpen(false)}
+        theme={theme}
+        onApply={handleThemeApply}
       />
     </div>
   );

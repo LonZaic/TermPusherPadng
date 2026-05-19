@@ -245,6 +245,21 @@ function buildMenu() {
         },
       ],
     },
+    {
+      label: 'Theme',
+      submenu: [
+        {
+          label: 'Theme Settings...',
+          accelerator: 'CmdOrCtrl+Shift+T',
+          click: () => {
+            const win = BrowserWindow.getFocusedWindow();
+            if (win && !win.isDestroyed()) {
+              win.webContents.send('open-theme');
+            }
+          },
+        },
+      ],
+    },
   ];
 
   const menu = Menu.buildFromTemplate(template);

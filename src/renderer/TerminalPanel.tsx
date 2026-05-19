@@ -4,10 +4,11 @@ import { FitAddon } from '@xterm/addon-fit';
 
 interface TerminalPanelProps {
   tabId: string;
+  themeVersion: number;
   onCommandCapture?: (command: string) => void;
 }
 
-const TerminalPanel = forwardRef<{ focus: () => void }, TerminalPanelProps>(({ tabId, onCommandCapture }, ref) => {
+const TerminalPanel = forwardRef<{ focus: () => void }, TerminalPanelProps>(({ tabId, themeVersion, onCommandCapture }, ref) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstance = useRef<Terminal | null>(null);
   const fitAddon = useRef<FitAddon | null>(null);
@@ -20,6 +21,12 @@ const TerminalPanel = forwardRef<{ focus: () => void }, TerminalPanelProps>(({ t
   useEffect(() => {
     if (!terminalRef.current) return;
 
+    const root = document.documentElement;
+    const cs = getComputedStyle(root);
+    const isDark = cs.getPropertyValue('--app-is-dark').trim() === '1';
+    const termBg = cs.getPropertyValue('--app-bg').trim() || '#1e1e2e';
+    const termFg = cs.getPropertyValue('--app-text').trim() || '#cdd6f4';
+
     const term = new Terminal({
       cursorBlink: true,
       cursorStyle: 'bar',
@@ -27,9 +34,9 @@ const TerminalPanel = forwardRef<{ focus: () => void }, TerminalPanelProps>(({ t
       fontFamily: "'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace",
       lineHeight: 1.2,
       letterSpacing: 0,
-      theme: {
-        background: '#1e1e2e',
-        foreground: '#cdd6f4',
+      theme: isDark ? {
+        background: termBg,
+        foreground: termFg,
         cursor: '#f5e0dc',
         selectionBackground: '#585b7055',
         black: '#45475a',
@@ -48,6 +55,27 @@ const TerminalPanel = forwardRef<{ focus: () => void }, TerminalPanelProps>(({ t
         brightMagenta: '#f5c2e7',
         brightCyan: '#94e2d5',
         brightWhite: '#a6adc8',
+      } : {
+        background: termBg,
+        foreground: termFg,
+        cursor: '#1e66f5',
+        selectionBackground: '#00000020',
+        black: '#1e1e2e',
+        red: '#c0392b',
+        green: '#1e8449',
+        yellow: '#b7950b',
+        blue: '#2471a3',
+        magenta: '#6c3483',
+        cyan: '#148f77',
+        white: '#555555',
+        brightBlack: '#888888',
+        brightRed: '#e74c3c',
+        brightGreen: '#27ae60',
+        brightYellow: '#d4ac0d',
+        brightBlue: '#3498db',
+        brightMagenta: '#8e44ad',
+        brightCyan: '#1abc9c',
+        brightWhite: '#1e1e2e',
       },
       allowTransparency: false,
       cols: 80,
@@ -83,6 +111,67 @@ const TerminalPanel = forwardRef<{ focus: () => void }, TerminalPanelProps>(({ t
       term.dispose();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Update terminal theme when themeVersion changes (skip first: init handles it)
+  const themeInitRef = useRef(true);
+  useEffect(() => {
+    if (themeInitRef.current) {
+      themeInitRef.current = false;
+      return;
+    }
+    const term = termInstance.current;
+    if (!term) return;
+
+    const root = document.documentElement;
+    const cs = getComputedStyle(root);
+    const isDark = cs.getPropertyValue('--app-is-dark').trim() === '1';
+    const termBg = cs.getPropertyValue('--app-bg').trim() || '#1e1e2e';
+    const termFg = cs.getPropertyValue('--app-text').trim() || '#cdd6f4';
+
+    term.options.theme = isDark ? {
+      background: termBg,
+      foreground: termFg,
+      cursor: '#f5e0dc',
+      selectionBackground: '#585b7055',
+      black: '#45475a',
+      red: '#f38ba8',
+      green: '#a6e3a1',
+      yellow: '#f9e2af',
+      blue: '#89b4fa',
+      magenta: '#f5c2e7',
+      cyan: '#94e2d5',
+      white: '#bac2de',
+      brightBlack: '#585b70',
+      brightRed: '#f38ba8',
+      brightGreen: '#a6e3a1',
+      brightYellow: '#f9e2af',
+      brightBlue: '#89b4fa',
+      brightMagenta: '#f5c2e7',
+      brightCyan: '#94e2d5',
+      brightWhite: '#a6adc8',
+    } : {
+      background: termBg,
+      foreground: termFg,
+      cursor: '#1e66f5',
+      selectionBackground: '#00000020',
+      black: '#1e1e2e',
+      red: '#c0392b',
+      green: '#1e8449',
+      yellow: '#b7950b',
+      blue: '#2471a3',
+      magenta: '#6c3483',
+      cyan: '#148f77',
+      white: '#555555',
+      brightBlack: '#888888',
+      brightRed: '#e74c3c',
+      brightGreen: '#27ae60',
+      brightYellow: '#d4ac0d',
+      brightBlue: '#3498db',
+      brightMagenta: '#8e44ad',
+      brightCyan: '#1abc9c',
+      brightWhite: '#1e1e2e',
+    };
+  }, [themeVersion]);
 
   // Handle PTY output (filtered by tabId) — clear on switch
   useEffect(() => {

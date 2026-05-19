@@ -49,6 +49,7 @@ interface ElectronAPI {
   onAiPtyOutput: (callback: (tabId: string, data: string) => void) => () => void;
   onAiPtyExited: (callback: (tabId: string, exitCode: number) => void) => () => void;
   openExternal: (url: string) => void;
+  onOpenTheme: (callback: () => void) => () => void;
 }
 
 interface Window {
