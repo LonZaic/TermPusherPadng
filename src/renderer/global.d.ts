@@ -1,3 +1,24 @@
+interface APIConfig {
+  provider: string;
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+}
+
+interface LearningNote {
+  id: string;
+  sessionId: string;
+  tabId: string;
+  tabName: string;
+  question: string;
+  answer: string;
+  title: string;
+  summary: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface TabInfo {
   tabId: string;
   name: string;
@@ -51,6 +72,23 @@ interface ElectronAPI {
   ocrRecognize: (dataUrl: string) => Promise<string>;
   openExternal: (url: string) => void;
   onOpenTheme: (callback: () => void) => () => void;
+  // Learning Notes
+  summarizeQA: (params: {
+    question: string;
+    answer: string;
+    tabId: string;
+    tabName: string;
+    config: APIConfig;
+  }) => Promise<{ note: LearningNote | null; error?: string }>;
+  loadNotes: () => Promise<LearningNote[]>;
+  updateNote: (noteId: string, updates: Partial<LearningNote>) => Promise<boolean>;
+  deleteNote: (noteId: string) => Promise<boolean>;
+  exportNotes: (noteIds: string[]) => Promise<string>;
+  getNotesPath: () => Promise<string>;
+  onToggleNoteMode: (callback: () => void) => () => void;
+  onOpenNotesPanel: (callback: () => void) => () => void;
+  onOpenAPISettings: (callback: () => void) => () => void;
+  onNoteGenerated: (callback: (note: LearningNote) => void) => () => void;
 }
 
 interface Window {

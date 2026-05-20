@@ -1853,3 +1853,441 @@ html, body, #root {
   from { opacity: 0; transform: translateX(-50%) translateY(8px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
+
+/* ---- Note Mode & Panel Buttons ---- */
+.note-mode-btn,
+.notes-panel-btn {
+  width: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--app-text-secondary);
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-left: 1px solid var(--app-bg-tertiary);
+}
+
+.note-mode-btn:hover,
+.notes-panel-btn:hover {
+  color: var(--app-text);
+  background: var(--app-bg-secondary);
+}
+
+.note-mode-btn.active {
+  color: #a6e3a1;
+  text-shadow: 0 0 8px rgba(166, 227, 161, 0.6);
+  animation: note-glow-pulse 2s ease-in-out infinite;
+}
+
+.notes-panel-btn.active {
+  color: #89b4fa;
+}
+
+@keyframes note-glow-pulse {
+  0%, 100% { text-shadow: 0 0 8px rgba(166, 227, 161, 0.6); }
+  50% { text-shadow: 0 0 16px rgba(166, 227, 161, 0.9); }
+}
+
+/* ---- Notes Panel ---- */
+.notes-panel {
+  width: 320px;
+  min-width: 320px;
+  background: var(--app-bg-secondary);
+  border-left: 1px solid var(--app-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.notes-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--app-border);
+  flex-shrink: 0;
+}
+
+.notes-panel-header h3 {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.notes-panel-export-btn,
+.notes-panel-close-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--app-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.notes-panel-export-btn:hover,
+.notes-panel-close-btn:hover {
+  background: var(--app-bg-tertiary);
+  color: var(--app-text);
+}
+
+.notes-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 10px;
+}
+
+.notes-panel-body::-webkit-scrollbar { width: 4px; }
+.notes-panel-body::-webkit-scrollbar-track { background: transparent; }
+.notes-panel-body::-webkit-scrollbar-thumb { background: var(--app-bg-tertiary); border-radius: 2px; }
+
+/* ---- Notes Empty State ---- */
+.notes-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.notes-empty-icon {
+  font-size: 36px;
+  opacity: 0.5;
+}
+
+.notes-empty-hint {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+/* ---- Notes Group ---- */
+.notes-group {
+  margin-bottom: 12px;
+}
+
+.notes-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  user-select: none;
+}
+
+.notes-group-header:hover {
+  background: var(--app-bg);
+}
+
+.notes-group-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--app-text);
+  flex: 1;
+}
+
+.notes-group-count {
+  font-size: 10px;
+  color: var(--app-text-secondary);
+}
+
+.notes-group-chevron {
+  font-size: 10px;
+  color: var(--app-text-secondary);
+  transition: transform 0.15s ease;
+}
+
+.notes-group-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+/* ---- Note Card ---- */
+.note-card {
+  background: var(--app-bg);
+  border: 1px solid var(--app-bg-tertiary);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  transition: border-color 0.15s ease;
+}
+
+.note-card:hover {
+  border-color: var(--app-border);
+}
+
+.note-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.note-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text);
+  flex: 1;
+  cursor: pointer;
+  line-height: 1.3;
+}
+
+.note-card-title:hover {
+  color: #89b4fa;
+}
+
+.note-card-title-input {
+  flex: 1;
+  padding: 2px 6px;
+  border: 1px solid #89b4fa;
+  border-radius: 4px;
+  background: var(--app-bg-secondary);
+  color: var(--app-text);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  outline: none;
+}
+
+.note-card-time {
+  font-size: 10px;
+  color: var(--app-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.note-card-summary {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  line-height: 1.5;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.note-card-summary:hover {
+  color: var(--app-text);
+}
+
+.note-card-summary-edit {
+  width: 100%;
+  min-height: 50px;
+  padding: 6px 8px;
+  border: 1px solid #89b4fa;
+  border-radius: 4px;
+  background: var(--app-bg-secondary);
+  color: var(--app-text);
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+
+.note-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.note-tag {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--app-bg-tertiary);
+  color: var(--app-text-secondary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+.note-card-meta-toggle {
+  font-size: 10px;
+  color: var(--app-text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
+  font-family: inherit;
+  transition: color 0.12s ease;
+}
+
+.note-card-meta-toggle:hover {
+  color: #89b4fa;
+}
+
+.note-card-question,
+.note-card-answer {
+  margin-top: 6px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--app-bg-secondary);
+  border: 1px solid var(--app-bg-tertiary);
+}
+
+.note-card-question-label,
+.note-card-answer-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--app-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.note-card-question-text {
+  font-size: 11px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  color: #f9e2af;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.note-card-answer-text {
+  font-size: 10px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  color: var(--app-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.3;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.note-card-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--app-bg-tertiary);
+}
+
+.note-action {
+  padding: 3px 10px;
+  border: 1px solid var(--app-bg-tertiary);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--app-text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  font-family: inherit;
+}
+
+.note-action:hover {
+  background: var(--app-bg-tertiary);
+  color: var(--app-text);
+}
+
+.note-action.delete:hover {
+  background: rgba(243, 139, 168, 0.15);
+  color: #f38ba8;
+  border-color: #f38ba8;
+}
+
+/* ---- Inline Toast ---- */
+.note-panel-toast {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  border-radius: 6px;
+  background: var(--app-accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  pointer-events: none;
+  white-space: nowrap;
+  animation: ocr-toast-in 0.25s ease;
+}
+
+/* ---- API Settings Dialog ---- */
+.api-settings-dialog {
+  width: 440px;
+}
+
+.api-warning {
+  font-size: 11px;
+  color: #f9e2af;
+  background: rgba(249, 226, 175, 0.08);
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(249, 226, 175, 0.2);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.api-note {
+  font-size: 11px;
+  color: var(--app-text-secondary);
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
+.api-key-input-wrapper {
+  position: relative;
+  flex: 1;
+}
+
+.api-key-input-wrapper input {
+  width: 100%;
+  padding-right: 50px;
+}
+
+.api-key-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--app-bg-tertiary);
+  border: 1px solid var(--app-border);
+  border-radius: 4px;
+  color: var(--app-text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 8px;
+  font-family: inherit;
+}
+
+.api-key-toggle:hover {
+  color: var(--app-text);
+}
+
+/* ---- Note Status Toast ---- */
+.note-status-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 20px;
+  border-radius: 8px;
+  background: var(--app-bg-tertiary);
+  border: 1px solid var(--app-border);
+  color: var(--app-text);
+  font-size: 13px;
+  z-index: 200;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  animation: note-toast-in 0.3s ease;
+}
+
+@keyframes note-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}

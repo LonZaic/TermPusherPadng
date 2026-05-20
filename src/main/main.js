@@ -4,6 +4,9 @@ const os = require('os');
 const pty = require('node-pty');
 const { createWorker } = require('tesseract.js');
 const { scanAllSessions } = require('./sessionScanner');
+const { loadAllNotes, addNote, updateNote, deleteNote, generateMarkdown } = require('./noteManager');
+const { summarizeQA } = require('./aiSummarizer');
+const { stripAnsi } = require('./ansiStripper');
 
 const CHUNK_SIZE = 4096;
 const CHUNK_DELAY_MS = 10;
@@ -261,6 +264,40 @@ function buildMenu() {
         },
       ],
     },
+    {
+      label: 'Notes',
+      submenu: [
+        {
+          label: 'Toggle Note Mode',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: () => {
+            const win = BrowserWindow.getFocusedWindow();
+            if (win && !win.isDestroyed()) {
+              win.webContents.send('toggle-note-mode');
+            }
+          },
+        },
+        {
+          label: 'Open Notes Panel',
+          accelerator: 'CmdOrCtrl+Shift+J',
+          click: () => {
+            const win = BrowserWindow.getFocusedWindow();
+            if (win && !win.isDestroyed()) {
+              win.webContents.send('open-notes-panel');
+            }
+          },
+        },
+        {
+          label: 'API Settings...',
+          click: () => {
+            const win = BrowserWindow.getFocusedWindow();
+            if (win && !win.isDestroyed()) {
+              win.webContents.send('open-api-settings');
+            }
+          },
+        },
+      ],
+    },
   ];
 
   const menu = Menu.buildFromTemplate(template);
@@ -510,6 +547,63 @@ ipcMain.on('open-external', (_event, url) => {
   if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
     shell.openExternal(url);
   }
+});
+
+// ---- Learning Notes IPC ----
+ipcMain.handle('summarize-qa', async (_event, { question, answer, tabId, tabName, config }) => {
+  try {
+    const cleanedAnswer = stripAnsi(answer);
+    const result = await summarizeQA({ question, answer: cleanedAnswer, config });
+    if (result.error) {
+      return { note: null, error: result.error };
+    }
+    const note = {
+      id: 'note-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      sessionId: tabId,
+      tabId,
+      tabName,
+      question,
+      answer: cleanedAnswer.slice(0, 5000),
+      title: result.title,
+      summary: result.summary,
+      tags: result.tags,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    addNote(note);
+    return { note, error: null };
+  } catch (err) {
+    return { note: null, error: err.message || 'Unknown error during summarization' };
+  }
+});
+
+ipcMain.handle('load-notes', async () => {
+  try { return loadAllNotes(); } catch (err) { return []; }
+});
+
+ipcMain.handle('update-note', async (_event, { noteId, updates }) => {
+  try { return updateNote(noteId, updates); } catch (err) { return false; }
+});
+
+ipcMain.handle('delete-note', async (_event, { noteId }) => {
+  try { return deleteNote(noteId); } catch (err) { return false; }
+});
+
+ipcMain.handle('export-notes', async (_event, { noteIds }) => {
+  try {
+    const allNotes = loadAllNotes();
+    const selected = noteIds && noteIds.length > 0
+      ? allNotes.filter(n => noteIds.includes(n.id))
+      : allNotes;
+    return generateMarkdown(selected);
+  } catch (err) {
+    return '# Export Error\n\nFailed to generate markdown.';
+  }
+});
+
+ipcMain.handle('get-notes-path', async () => {
+  const { getNotesFilePath } = require('./noteManager');
+  return getNotesFilePath();
 });
 
 // ---- App lifecycle ----

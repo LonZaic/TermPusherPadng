@@ -16,9 +16,13 @@ interface TabBarProps {
   onSwitch: (tabId: string) => void;
   onClose: (tabId: string) => void;
   onNewConversation: () => void;
+  noteMode: boolean;
+  onToggleNoteMode: () => void;
+  notesPanelOpen: boolean;
+  onToggleNotesPanel: () => void;
 }
 
-function TabBar({ tabs, activeTabId, onSwitch, onClose, onNewConversation }: TabBarProps) {
+function TabBar({ tabs, activeTabId, onSwitch, onClose, onNewConversation, noteMode, onToggleNoteMode, notesPanelOpen, onToggleNotesPanel }: TabBarProps) {
   return (
     <div className="tab-bar">
       <div className="tab-list">
@@ -64,6 +68,20 @@ function TabBar({ tabs, activeTabId, onSwitch, onClose, onNewConversation }: Tab
           );
         })}
       </div>
+      <button
+        className={`note-mode-btn${noteMode ? ' active' : ''}`}
+        onClick={onToggleNoteMode}
+        title={noteMode ? '关闭学习笔记模式' : '开启学习笔记模式'}
+      >
+        {noteMode ? '\u{1F4D6}' : '\u{1F4D5}'}
+      </button>
+      <button
+        className={`notes-panel-btn${notesPanelOpen ? ' active' : ''}`}
+        onClick={onToggleNotesPanel}
+        title="查看学习笔记"
+      >
+        {'\u{1F4C4}'}
+      </button>
       <button
         className="tab-new-btn"
         onClick={onNewConversation}

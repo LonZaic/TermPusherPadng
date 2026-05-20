@@ -121,4 +121,53 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternal: (url) => {
     ipcRenderer.send('open-external', url);
   },
+
+  // Learning Notes
+  summarizeQA: (params) => {
+    return ipcRenderer.invoke('summarize-qa', params);
+  },
+
+  loadNotes: () => {
+    return ipcRenderer.invoke('load-notes');
+  },
+
+  updateNote: (noteId, updates) => {
+    return ipcRenderer.invoke('update-note', { noteId, updates });
+  },
+
+  deleteNote: (noteId) => {
+    return ipcRenderer.invoke('delete-note', { noteId });
+  },
+
+  exportNotes: (noteIds) => {
+    return ipcRenderer.invoke('export-notes', { noteIds });
+  },
+
+  getNotesPath: () => {
+    return ipcRenderer.invoke('get-notes-path');
+  },
+
+  onToggleNoteMode: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('toggle-note-mode', handler);
+    return () => ipcRenderer.removeListener('toggle-note-mode', handler);
+  },
+
+  onOpenNotesPanel: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('open-notes-panel', handler);
+    return () => ipcRenderer.removeListener('open-notes-panel', handler);
+  },
+
+  onOpenAPISettings: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('open-api-settings', handler);
+    return () => ipcRenderer.removeListener('open-api-settings', handler);
+  },
+
+  onNoteGenerated: (callback) => {
+    const handler = (_event, note) => callback(note);
+    ipcRenderer.on('note-generated', handler);
+    return () => ipcRenderer.removeListener('note-generated', handler);
+  },
 });

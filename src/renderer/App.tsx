@@ -6,6 +6,8 @@ import TabBar from './TabBar';
 import NewConversationDialog from './NewConversationDialog';
 import ThemeDialog from './ThemeDialog';
 import ImageOCRDialog from './ImageOCRDialog';
+import NotesPanel from './NotesPanel';
+import APISettingsDialog from './APISettingsDialog';
 import { assignTabColor } from './tabColors';
 import type { TabColor } from './tabColors';
 import { addRecentCommand, addRecentProject } from './commandTracker';
@@ -35,7 +37,78 @@ function App() {
   const [ocrImageDataUrl, setOcrImageDataUrl] = useState<string | null>(null);
   const termRef = useRef<{ focus: () => void }>(null);
 
+  // Learning Notes state
+  const [noteMode, setNoteMode] = useState(false);
+  const [notesPanelOpen, setNotesPanelOpen] = useState(false);
+  const [apiSettingsOpen, setApiSettingsOpen] = useState(false);
+  const [notes, setNotes] = useState<LearningNote[]>([]);
+  const [apiConfig, setApiConfig] = useState<APIConfig>(() => {
+    try {
+      const raw = localStorage.getItem('notes-api-config');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          provider: parsed.provider || 'anthropic',
+          apiKey: parsed.apiKey || '',
+          model: parsed.model || 'claude-sonnet-4-20250514',
+          baseUrl: parsed.baseUrl || 'https://api.anthropic.com/v1/messages',
+        };
+      }
+    } catch { /* ignore */ }
+    return { provider: 'anthropic', apiKey: '', model: 'claude-sonnet-4-20250514', baseUrl: 'https://api.anthropic.com/v1/messages' };
+  });
+  const [noteStatus, setNoteStatus] = useState('');
+  const convMonitorRef = useRef({
+    phase: 'idle' as 'idle' | 'collecting' | 'summarizing',
+    question: '',
+    answerBuffer: '',
+    tabId: '',
+    tabName: '',
+    silenceTimer: null as ReturnType<typeof setTimeout> | null,
+    maxWaitTimer: null as ReturnType<typeof setTimeout> | null,
+  });
+
   const activeTab = tabs.find((t) => t.tabId === activeTabId);
+
+  const handleSummarize = useCallback(async () => {
+    const monitor = convMonitorRef.current;
+    if (monitor.phase !== 'collecting') return;
+
+    monitor.phase = 'summarizing';
+    if (monitor.silenceTimer) clearTimeout(monitor.silenceTimer);
+    if (monitor.maxWaitTimer) clearTimeout(monitor.maxWaitTimer);
+
+    if (!apiConfig.apiKey) {
+      setNoteStatus('API key not configured. Open Settings to configure.');
+      convMonitorRef.current = { phase: 'idle', question: '', answerBuffer: '', tabId: '', tabName: '', silenceTimer: null, maxWaitTimer: null };
+      setTimeout(() => setNoteStatus(''), 4000);
+      return;
+    }
+
+    setNoteStatus('Generating note...');
+
+    try {
+      const result = await window.electronAPI.summarizeQA({
+        question: monitor.question,
+        answer: monitor.answerBuffer,
+        tabId: monitor.tabId,
+        tabName: monitor.tabName,
+        config: apiConfig,
+      });
+
+      if (result.error) {
+        setNoteStatus('Note generation failed: ' + result.error);
+      } else if (result.note) {
+        setNotes(prev => [result.note!, ...prev]);
+        setNoteStatus('Note generated: ' + result.note.title);
+      }
+    } catch (err: any) {
+      setNoteStatus('Note generation error: ' + (err.message || 'Unknown error'));
+    }
+
+    convMonitorRef.current = { phase: 'idle', question: '', answerBuffer: '', tabId: '', tabName: '', silenceTimer: null, maxWaitTimer: null };
+    setTimeout(() => setNoteStatus(''), 4000);
+  }, [apiConfig]);
 
   // Initialize tabs from main process
   useEffect(() => {
@@ -179,6 +252,49 @@ function App() {
     return () => document.removeEventListener('paste', onPaste);
   }, []);
 
+  // Load notes on mount
+  useEffect(() => {
+    window.electronAPI.loadNotes().then(setNotes).catch(() => {});
+  }, []);
+
+  // Listen for Notes menu IPC events
+  useEffect(() => {
+    const unsubs = [
+      window.electronAPI.onToggleNoteMode(() => setNoteMode(v => !v)),
+      window.electronAPI.onOpenNotesPanel(() => setNotesPanelOpen(true)),
+      window.electronAPI.onOpenAPISettings(() => setApiSettingsOpen(true)),
+    ];
+    return () => unsubs.forEach(fn => fn());
+  }, []);
+
+  // Monitor PTY output for conversation detection (silence-based)
+  useEffect(() => {
+    const SILENCE_MS = 2500;
+    const cleanup = window.electronAPI.onPtyOutput((eventTabId, data) => {
+      const monitor = convMonitorRef.current;
+      if (monitor.phase !== 'collecting' || eventTabId !== monitor.tabId) return;
+
+      monitor.answerBuffer += data;
+
+      if (monitor.silenceTimer) clearTimeout(monitor.silenceTimer);
+      monitor.silenceTimer = setTimeout(() => {
+        if (convMonitorRef.current.phase === 'collecting') {
+          handleSummarize();
+        }
+      }, SILENCE_MS);
+    });
+    return cleanup;
+  }, [handleSummarize]);
+
+  // Cleanup conversation monitor on unmount
+  useEffect(() => {
+    return () => {
+      const m = convMonitorRef.current;
+      if (m.silenceTimer) clearTimeout(m.silenceTimer);
+      if (m.maxWaitTimer) clearTimeout(m.maxWaitTimer);
+    };
+  }, []);
+
   const handleSwitchTab = useCallback(async (tabId: string) => {
     if (tabId === activeTabId) return;
     const result = await window.electronAPI.switchTab(tabId);
@@ -223,7 +339,31 @@ function App() {
 
   const handleCommandCapture = useCallback((command: string) => {
     addRecentCommand(command, 'terminal');
-  }, []);
+
+    if (!noteMode) return;
+    if (!apiConfig.apiKey) {
+      setNoteStatus('Configure API key in Settings to enable note generation.');
+      setTimeout(() => setNoteStatus(''), 4000);
+      return;
+    }
+    if (convMonitorRef.current.phase !== 'idle') return;
+
+    const tab = activeTab;
+    if (!tab) return;
+
+    const SILENCE_MS = 2500;
+    const MAX_WAIT_MS = 60000;
+
+    convMonitorRef.current = {
+      phase: 'collecting',
+      question: command,
+      answerBuffer: '',
+      tabId: tab.tabId,
+      tabName: tab.name,
+      silenceTimer: setTimeout(() => handleSummarize(), SILENCE_MS),
+      maxWaitTimer: setTimeout(() => handleSummarize(), MAX_WAIT_MS),
+    };
+  }, [noteMode, apiConfig, activeTab, handleSummarize]);
 
   const handleThemeApply = useCallback((t: ThemeState) => {
     setTheme(t);
@@ -242,6 +382,39 @@ function App() {
   const handleOpenOCR = useCallback(() => {
     setOcrImageDataUrl(null);
     setOcrOpen(true);
+  }, []);
+
+  const handleSaveAPIConfig = useCallback((config: APIConfig) => {
+    setApiConfig(config);
+    try { localStorage.setItem('notes-api-config', JSON.stringify(config)); } catch { /* ignore */ }
+    setApiSettingsOpen(false);
+  }, []);
+
+  const handleUpdateNote = useCallback(async (noteId: string, updates: Partial<LearningNote>) => {
+    const success = await window.electronAPI.updateNote(noteId, updates);
+    if (success) {
+      setNotes(prev => prev.map(n => n.id === noteId ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n));
+    }
+  }, []);
+
+  const handleDeleteNote = useCallback(async (noteId: string) => {
+    const success = await window.electronAPI.deleteNote(noteId);
+    if (success) {
+      setNotes(prev => prev.filter(n => n.id !== noteId));
+    }
+  }, []);
+
+  const handleExportNotes = useCallback(async (noteIds: string[]) => {
+    const markdown = await window.electronAPI.exportNotes(noteIds);
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'learning-notes-' + new Date().toISOString().slice(0, 10) + '.md';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }, []);
 
   const handleProjectOpen = useCallback((projectPath: string) => {
@@ -279,6 +452,10 @@ function App() {
           onSwitch={handleSwitchTab}
           onClose={handleCloseTab}
           onNewConversation={handleNewConversation}
+          noteMode={noteMode}
+          onToggleNoteMode={() => setNoteMode(v => !v)}
+          notesPanelOpen={notesPanelOpen}
+          onToggleNotesPanel={() => setNotesPanelOpen(v => !v)}
         />
         <div className="main-content">
           <CommandPanel
@@ -310,6 +487,16 @@ function App() {
               <div className="loading-hint">点击 + 新建标签</div>
             )}
           </div>
+          {notesPanelOpen && (
+            <NotesPanel
+              open={notesPanelOpen}
+              notes={notes}
+              onClose={() => setNotesPanelOpen(false)}
+              onUpdateNote={handleUpdateNote}
+              onDeleteNote={handleDeleteNote}
+              onExport={handleExportNotes}
+            />
+          )}
         </div>
       </div>
       <NewConversationDialog
@@ -331,6 +518,13 @@ function App() {
         onClose={() => { setOcrOpen(false); setOcrImageDataUrl(null); }}
         onInsert={handleOCRInsert}
       />
+      <APISettingsDialog
+        open={apiSettingsOpen}
+        config={apiConfig}
+        onClose={() => setApiSettingsOpen(false)}
+        onSave={handleSaveAPIConfig}
+      />
+      {noteStatus && <div className="note-status-toast">{noteStatus}</div>}
     </div>
   );
 }
