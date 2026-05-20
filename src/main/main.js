@@ -8,6 +8,14 @@ const { loadAllNotes, addNote, updateNote, deleteNote, generateMarkdown } = requ
 const { summarizeQA } = require('./aiSummarizer');
 const { stripAnsi } = require('./ansiStripper');
 
+// Prevent "A JavaScript error occurred in the main process" dialog
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+
 const CHUNK_SIZE = 4096;
 const CHUNK_DELAY_MS = 10;
 
@@ -148,6 +156,11 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ---- Helpers ----
+function safeWebContents(bw) {
+  try { return bw && !bw.isDestroyed() ? bw.webContents : null; } catch { return null; }
+}
+
 // ---- Menu ----
 function buildMenu() {
   const template = [
@@ -158,12 +171,15 @@ function buildMenu() {
           label: 'New Tab',
           accelerator: 'CmdOrCtrl+T',
           click: () => {
-            const win = BrowserWindow.getFocusedWindow();
-            const ws = getWindowState(win);
-            if (!ws) return;
-            const tabId = createTab(ws, null, 'Terminal');
-            ws.activeTabId = tabId;
-            ws.win.webContents.send('activate-tab', tabId);
+            try {
+              const win = BrowserWindow.getFocusedWindow();
+              const ws = getWindowState(win);
+              if (!ws) return;
+              const tabId = createTab(ws, null, 'Terminal');
+              ws.activeTabId = tabId;
+              const wc = safeWebContents(ws.win);
+              if (wc) wc.send('activate-tab', tabId);
+            } catch (err) { console.error('[menu] New Tab error:', err.message); }
           },
         },
         { type: 'separator' },
@@ -171,39 +187,44 @@ function buildMenu() {
           label: 'Open File...',
           accelerator: 'CmdOrCtrl+O',
           click: async () => {
-            const win = BrowserWindow.getFocusedWindow();
-            const ws = getWindowState(win);
-            if (!ws) return;
-            const result = await dialog.showOpenDialog(ws.win, {
-              title: 'Open File',
-              properties: ['openFile'],
-              filters: [{ name: 'All Files', extensions: ['*'] }],
-            });
-            if (!result.canceled && result.filePaths.length > 0) {
-              const filePath = result.filePaths[0];
-              const quoted = filePath.includes(' ') ? `"${filePath}"` : filePath;
-              const p = activePty(ws);
-              if (p) p.write(quoted + ' ');
-            }
+            try {
+              const win = BrowserWindow.getFocusedWindow();
+              const ws = getWindowState(win);
+              if (!ws) return;
+              const result = await dialog.showOpenDialog(ws.win, {
+                title: 'Open File',
+                properties: ['openFile'],
+                filters: [{ name: 'All Files', extensions: ['*'] }],
+              });
+              if (!result.canceled && result.filePaths.length > 0) {
+                const filePath = result.filePaths[0];
+                const quoted = filePath.includes(' ') ? `"${filePath}"` : filePath;
+                const p = activePty(ws);
+                if (p) p.write(quoted + ' ');
+              }
+            } catch (err) { console.error('[menu] Open File error:', err.message); }
           },
         },
         {
           label: 'Open Folder...',
           accelerator: 'CmdOrCtrl+Shift+O',
           click: async () => {
-            const win = BrowserWindow.getFocusedWindow();
-            const ws = getWindowState(win);
-            if (!ws) return;
-            const result = await dialog.showOpenDialog(ws.win, {
-              title: 'Open Folder',
-              properties: ['openDirectory'],
-            });
-            if (!result.canceled && result.filePaths.length > 0) {
-              const folderPath = result.filePaths[0];
-              const tabId = createTab(ws, folderPath, null);
-              ws.activeTabId = tabId;
-              ws.win.webContents.send('activate-tab', tabId);
-            }
+            try {
+              const win = BrowserWindow.getFocusedWindow();
+              const ws = getWindowState(win);
+              if (!ws) return;
+              const result = await dialog.showOpenDialog(ws.win, {
+                title: 'Open Folder',
+                properties: ['openDirectory'],
+              });
+              if (!result.canceled && result.filePaths.length > 0) {
+                const folderPath = result.filePaths[0];
+                const tabId = createTab(ws, folderPath, null);
+                ws.activeTabId = tabId;
+                const wc = safeWebContents(ws.win);
+                if (wc) wc.send('activate-tab', tabId);
+              }
+            } catch (err) { console.error('[menu] Open Folder error:', err.message); }
           },
         },
         { type: 'separator' },
@@ -239,12 +260,15 @@ function buildMenu() {
           label: 'New Canvas',
           accelerator: 'CmdOrCtrl+Shift+D',
           click: () => {
-            const win = BrowserWindow.getFocusedWindow();
-            const ws = getWindowState(win);
-            if (!ws) return;
-            const tabId = createCanvasTab(ws);
-            ws.activeTabId = tabId;
-            ws.win.webContents.send('activate-tab', tabId);
+            try {
+              const win = BrowserWindow.getFocusedWindow();
+              const ws = getWindowState(win);
+              if (!ws) return;
+              const tabId = createCanvasTab(ws);
+              ws.activeTabId = tabId;
+              const wc = safeWebContents(ws.win);
+              if (wc) wc.send('activate-tab', tabId);
+            } catch (err) { console.error('[menu] New Canvas error:', err.message); }
           },
         },
       ],
@@ -256,10 +280,11 @@ function buildMenu() {
           label: 'Theme Settings...',
           accelerator: 'CmdOrCtrl+Shift+T',
           click: () => {
-            const win = BrowserWindow.getFocusedWindow();
-            if (win && !win.isDestroyed()) {
-              win.webContents.send('open-theme');
-            }
+            try {
+              const win = BrowserWindow.getFocusedWindow();
+              const wc = safeWebContents(win);
+              if (wc) wc.send('open-theme');
+            } catch (err) { console.error('[menu] Theme error:', err.message); }
           },
         },
       ],
@@ -271,29 +296,32 @@ function buildMenu() {
           label: 'Toggle Note Mode',
           accelerator: 'CmdOrCtrl+Shift+N',
           click: () => {
-            const win = BrowserWindow.getFocusedWindow();
-            if (win && !win.isDestroyed()) {
-              win.webContents.send('toggle-note-mode');
-            }
+            try {
+              const win = BrowserWindow.getFocusedWindow();
+              const wc = safeWebContents(win);
+              if (wc) wc.send('toggle-note-mode');
+            } catch (err) { console.error('[menu] Toggle Note Mode error:', err.message); }
           },
         },
         {
           label: 'Open Notes Panel',
           accelerator: 'CmdOrCtrl+Shift+J',
           click: () => {
-            const win = BrowserWindow.getFocusedWindow();
-            if (win && !win.isDestroyed()) {
-              win.webContents.send('open-notes-panel');
-            }
+            try {
+              const win = BrowserWindow.getFocusedWindow();
+              const wc = safeWebContents(win);
+              if (wc) wc.send('open-notes-panel');
+            } catch (err) { console.error('[menu] Open Notes Panel error:', err.message); }
           },
         },
         {
           label: 'API Settings...',
           click: () => {
-            const win = BrowserWindow.getFocusedWindow();
-            if (win && !win.isDestroyed()) {
-              win.webContents.send('open-api-settings');
-            }
+            try {
+              const win = BrowserWindow.getFocusedWindow();
+              const wc = safeWebContents(win);
+              if (wc) wc.send('open-api-settings');
+            } catch (err) { console.error('[menu] API Settings error:', err.message); }
           },
         },
       ],

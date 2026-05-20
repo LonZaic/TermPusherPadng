@@ -15,6 +15,7 @@ function ImageOCRDialog({ open, imageDataUrl: initialImage, onClose, onInsert }:
   const [error, setError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [toast, setToast] = useState('');
+  const [autoEnter, setAutoEnter] = useState(false);
   const processingRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -128,10 +129,11 @@ function ImageOCRDialog({ open, imageDataUrl: initialImage, onClose, onInsert }:
   const handleInsert = useCallback(() => {
     const text = recognizedText.trim();
     if (text) {
-      onInsert(text);
+      const final = autoEnter ? text + '\r' : text;
+      onInsert(final);
       onClose();
     }
-  }, [recognizedText, onInsert, onClose]);
+  }, [recognizedText, autoEnter, onInsert, onClose]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && e.ctrlKey) {
@@ -176,11 +178,6 @@ function ImageOCRDialog({ open, imageDataUrl: initialImage, onClose, onInsert }:
                 </div>
               )}
             </div>
-            {imageDataUrl && (
-              <button className="ocr-change-btn" onClick={handleSelectFile}>
-                重新选择图片
-              </button>
-            )}
           </div>
           <div className="ocr-text-panel">
             <div className="ocr-text-label">识别文本（仅文字，可编辑修改）:</div>
@@ -201,7 +198,15 @@ function ImageOCRDialog({ open, imageDataUrl: initialImage, onClose, onInsert }:
         </div>
         <div className="ocr-footer">
           <span className="ocr-footer-hint">Ctrl+Enter 插入到终端输入框</span>
-          <button className="ocr-insert-btn" onClick={handleInsert} disabled={processing || !recognizedText.trim()}>
+          <button
+            className={`ocr-footer-btn ${autoEnter ? 'active' : ''}`}
+            onClick={() => setAutoEnter(!autoEnter)}
+            title={autoEnter ? '自动回车：开' : '自动回车：关'}
+            style={{ marginRight: 0 }}
+          >
+            是否回车
+          </button>
+          <button className="ocr-footer-btn primary" onClick={handleInsert} disabled={processing || !recognizedText.trim()}>
             插入
           </button>
         </div>

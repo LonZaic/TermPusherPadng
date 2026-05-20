@@ -337,6 +337,19 @@ function App() {
     termRef.current?.focus();
   }, [writing, activeTabId]);
 
+  const handleResumeSession = useCallback(async (tool: string, id: string, command: string) => {
+    if (writing) return;
+    setWriting(true);
+    try {
+      const tab = await window.electronAPI.createTab(null, null);
+      window.electronAPI.writeToTerminal(tab.tabId, command);
+      addRecentCommand(command, 'panel');
+      termRef.current?.focus();
+    } catch {
+      setWriting(false);
+    }
+  }, [writing]);
+
   const handleCommandCapture = useCallback((command: string) => {
     addRecentCommand(command, 'terminal');
 
@@ -464,6 +477,7 @@ function App() {
             currentProjectPath={activeTab?.projectPath || null}
             onProjectOpen={handleProjectOpen}
             onOpenOCR={handleOpenOCR}
+            onResumeSession={handleResumeSession}
           />
           <div className="terminal-wrapper">
             {loading ? (

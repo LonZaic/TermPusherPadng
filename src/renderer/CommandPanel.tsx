@@ -13,6 +13,7 @@ interface CustomCommand {
 const STORAGE_KEY = 'term-pusher-custom-commands';
 const OVERRIDES_KEY = 'term-pusher-overrides';
 const AUTO_ENTER_KEY = 'term-pusher-auto-enter';
+const SESSION_RENAMES_KEY = 'term-pusher-session-renames';
 
 function loadCustomCommands(): CustomCommand[] {
   try {
@@ -52,19 +53,27 @@ function saveAutoEnter(v: boolean) {
   localStorage.setItem(AUTO_ENTER_KEY, String(v));
 }
 
+function loadSessionRenames(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(SESSION_RENAMES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSessionRenames(renames: Record<string, string>) {
+  localStorage.setItem(SESSION_RENAMES_KEY, JSON.stringify(renames));
+}
+
 interface CommandPanelProps {
   onWriteCommand: (command: string) => void;
   writing: boolean;
   currentProjectPath: string | null;
   onProjectOpen?: (projectPath: string) => void;
   onOpenOCR?: () => void;
+  onResumeSession?: (tool: string, id: string, command: string) => void;
 }
-
-const QUICK_WORKFLOWS = [
-  { id: 'wf-cc', label: 'CC', command: 'claude', toolId: 'cc' },
-  { id: 'wf-codex', label: 'Codex', command: 'codex', toolId: 'codex' },
-  { id: 'wf-rx', label: 'Reasonix', command: 'reasonix code', toolId: 'reasonix' },
-];
 
 const SESSION_RESUME_COMMAND: Record<string, (id: string) => string> = {
   cc: (id) => `claude -r "${id}"`,
@@ -96,7 +105,7 @@ function formatTimeAgo(ts: number): string {
   return new Date(ts).toLocaleDateString('zh-CN');
 }
 
-function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOpen, onOpenOCR }: CommandPanelProps) {
+function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOpen, onOpenOCR, onResumeSession }: CommandPanelProps) {
   const [activeTool, setActiveTool] = useState(TOOL_GROUPS[0]?.id ?? 'cc');
   const [activeTab, setActiveTab] = useState('');
   const [customCommands, setCustomCommands] = useState<CustomCommand[]>(loadCustomCommands);
@@ -116,6 +125,9 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<string>('all');
   const [prevTool, setPrevTool] = useState(TOOL_GROUPS[0]?.id ?? 'cc');
+  const [sessionRenames, setSessionRenames] = useState<Record<string, string>>(loadSessionRenames);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
 
   const isSearching = searchQuery.trim().length > 0;
   const isHistory = activeTool === 'history';
@@ -292,13 +304,15 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
     writeCmd(cmd);
   }, [writeCmd]);
 
-  // Session resume handler
+  // Session resume handler — always opens a new tab
   const handleSessionResume = useCallback((tool: string, id: string) => {
     const cmdFn = SESSION_RESUME_COMMAND[tool];
-    if (cmdFn) {
-      handleCommandClick(cmdFn(id));
+    if (cmdFn && onResumeSession) {
+      const cmd = cmdFn(id);
+      const final = autoEnter ? cmd + '\r' : cmd;
+      onResumeSession(tool, id, final);
     }
-  }, [handleCommandClick]);
+  }, [autoEnter, onResumeSession]);
 
   // Refresh sessions
   const handleRefreshSessions = useCallback(() => {
@@ -366,14 +380,37 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
 
   const currentCategory = categories.find((c) => c.id === activeTab) || categories[0];
 
-  const handleWorkflowClick = useCallback((command: string) => {
-    handleCommandClick(command);
-  }, [handleCommandClick]);
-
   const handleProjectClick = useCallback((projectPath: string) => {
     onProjectOpen?.(projectPath);
     writeCmd(`cd /d "${projectPath}"`);
   }, [onProjectOpen, writeCmd]);
+
+  // Rename handlers
+  const getSessionTitle = useCallback((session: SessionEntry): string => {
+    const key = `${session.tool}:${session.id}`;
+    return sessionRenames[key] || session.title;
+  }, [sessionRenames]);
+
+  const startRename = useCallback((session: SessionEntry) => {
+    const key = `${session.tool}:${session.id}`;
+    setEditingSessionId(key);
+    setEditTitle(sessionRenames[key] || session.title);
+  }, [sessionRenames]);
+
+  const saveRename = useCallback(() => {
+    if (editingSessionId && editTitle.trim()) {
+      const next = { ...sessionRenames, [editingSessionId]: editTitle.trim() };
+      setSessionRenames(next);
+      saveSessionRenames(next);
+    }
+    setEditingSessionId(null);
+    setEditTitle('');
+  }, [editingSessionId, editTitle, sessionRenames]);
+
+  const cancelRename = useCallback(() => {
+    setEditingSessionId(null);
+    setEditTitle('');
+  }, []);
 
   // Build grouped or flat session list for history view
   const sessionGroups = useMemo(() => {
@@ -425,19 +462,8 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
         )}
       </div>
 
-      {/* Quick workflow buttons + auto-enter toggle */}
+      {/* Quick action buttons */}
       <div className="workflow-bar">
-        {QUICK_WORKFLOWS.map((wf) => (
-          <button
-            key={wf.id}
-            className="workflow-btn"
-            onClick={() => handleWorkflowClick(wf.command)}
-            disabled={writing}
-            title={`在终端执行: ${wf.command}`}
-          >
-            {wf.label}
-          </button>
-        ))}
         <button
           className={`workflow-btn workflow-project-btn ${showRecentProjects ? 'active' : ''}`}
           onClick={() => setShowRecentProjects(!showRecentProjects)}
@@ -445,7 +471,6 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
         >
           &#x1F4C1;
         </button>
-        {/* Auto-enter toggle */}
         <button
           className={`workflow-btn workflow-auto-btn ${autoEnter ? 'active' : ''}`}
           onClick={() => setAutoEnter(!autoEnter)}
@@ -453,7 +478,6 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
         >
           &#x23CE;
         </button>
-        {/* OCR button */}
         {onOpenOCR && (
           <button
             className="workflow-btn workflow-ocr-btn"
@@ -585,10 +609,30 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
                     <span className={`search-tag ${group.tagClass}`}>{group.name}</span>
                     <span className="session-group-count">{group.sessions.length}</span>
                   </div>
-                  {group.sessions.map((s) => (
-                    <div key={`${s.tool}-${s.id}`} className="session-item">
+                  {group.sessions.map((s) => {
+                    const sessionKey = `${s.tool}:${s.id}`;
+                    const isEditing = editingSessionId === sessionKey;
+                    return (
+                    <div key={sessionKey} className="session-item">
                       <div className="session-info">
-                        <div className="session-title" title={s.title}>{s.title}</div>
+                        {isEditing ? (
+                          <input
+                            className="session-title-input"
+                            value={editTitle}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                            onBlur={saveRename}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveRename();
+                              if (e.key === 'Escape') cancelRename();
+                            }}
+                            autoFocus
+                          />
+                        ) : (
+                          <div className="session-title" title={getSessionTitle(s)}>
+                            {sessionRenames[sessionKey] && <span className="session-renamed-icon" title="已重命名">&#x270E;</span>}
+                            {getSessionTitle(s)}
+                          </div>
+                        )}
                         <div className="session-meta">
                           {s.subtitle && (
                             <span className="session-subtitle" title={s.subtitle}>{s.subtitle}</span>
@@ -596,16 +640,28 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
                           <span className="session-time">{formatTimeAgo(s.updatedAt)}</span>
                         </div>
                       </div>
-                      <button
-                        className="session-resume-btn"
-                        onClick={() => handleSessionResume(s.tool, s.id)}
-                        disabled={writing}
-                        title="恢复此会话"
-                      >
-                        恢复
-                      </button>
+                      <div className="session-actions">
+                        {!isEditing && (
+                          <button
+                            className="session-rename-btn"
+                            onClick={() => startRename(s)}
+                            title="重命名"
+                          >
+                            &#x270E;
+                          </button>
+                        )}
+                        <button
+                          className="session-resume-btn"
+                          onClick={() => handleSessionResume(s.tool, s.id)}
+                          disabled={writing}
+                          title="恢复到新标签页"
+                        >
+                          恢复
+                        </button>
+                      </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ))
             )}
