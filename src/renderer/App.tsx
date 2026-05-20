@@ -422,6 +422,7 @@ function App() {
       }
       window.electronAPI.writeToTerminal(tab.tabId, command);
       addRecentCommand(command, 'panel');
+      window.dispatchEvent(new CustomEvent('refresh-recent'));
       termRef.current?.focus();
     } catch {
       setWriting(false);
@@ -430,6 +431,7 @@ function App() {
 
   const handleCommandCapture = useCallback((command: string) => {
     addRecentCommand(command, 'terminal');
+    window.dispatchEvent(new CustomEvent('refresh-recent'));
 
     // Detect cd commands to track actual working directory
     const cdMatch = command.trim().match(/^cd\s+(.+)$/i);

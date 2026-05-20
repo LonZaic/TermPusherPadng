@@ -175,16 +175,33 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
     })),
   }), [customCommands]);
 
-  const recentCategory = useMemo(() => ({
-    id: 'recent',
-    name: '最近使用',
-    icon: '⏱',
-    commands: recentCommands.map((c) => ({
-      id: `recent-${c.command}`,
-      command: c.command,
-      description: c.source === 'terminal' ? '终端输入' : '面板点击',
-    })),
-  }), [recentCommands]);
+  // Per-tool recent commands: CC in CC tab, Codex in Codex, Reasonix in Reasonix
+  const recentCategory = useMemo(() => {
+    const filtered = recentCommands.filter(c => {
+      const cmd = c.command.trim().toLowerCase();
+      if (activeTool === 'cc') return cmd.startsWith('claude');
+      if (activeTool === 'codex') return cmd.startsWith('codex');
+      if (activeTool === 'reasonix') return cmd.startsWith('reasonix');
+      return false;
+    });
+    return {
+      id: 'recent',
+      name: '最近使用',
+      icon: '⏱',
+      commands: filtered.map((c) => ({
+        id: `recent-${c.command}`,
+        command: c.command,
+        description: c.source === 'terminal' ? '终端输入' : '面板点击',
+      })),
+    };
+  }, [recentCommands, activeTool]);
+
+  // Listen for refresh-recent events (dispatched by App.tsx when terminal captures a command)
+  useEffect(() => {
+    const handler = () => setRecentCommands(getRecentCommands());
+    window.addEventListener('refresh-recent', handler);
+    return () => window.removeEventListener('refresh-recent', handler);
+  }, []);
 
   const categories = useMemo(() => {
     const base = isCustomTool
@@ -193,12 +210,9 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
           ...cat,
           commands: applyOverrides(cat.commands),
         }));
-    const withRecent = isCustomTool
+    return isCustomTool
       ? [customCategory]
-      : recentCategory.commands.length > 0
-        ? [recentCategory, ...base, customCategory]
-        : [...base, customCategory];
-    return withRecent;
+      : [recentCategory, ...base, customCategory];
   }, [isCustomTool, currentTool, customCategory, recentCategory, applyOverrides]);
 
   useEffect(() => {
