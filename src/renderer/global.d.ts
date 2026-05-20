@@ -34,6 +34,7 @@ interface SessionEntry {
   title: string;
   subtitle: string;
   cwd: string;
+  projectPath: string;
   startedAt: number;
   updatedAt: number;
   kind: string;
@@ -45,6 +46,35 @@ interface SessionScanResult {
   codex: SessionEntry[];
   reasonix: SessionEntry[];
   total: number;
+}
+
+interface FileNode {
+  name: string;
+  path: string;
+  isDir: boolean;
+  children: FileNode[];
+  changed: boolean;
+}
+
+interface DiffLine {
+  type: 'add' | 'delete' | 'context';
+  oldLine?: number;
+  newLine?: number;
+  content: string;
+}
+
+interface DiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: DiffLine[];
+}
+
+interface FileDiffResult {
+  file: string;
+  diff: DiffHunk[];
+  staged: DiffHunk[];
 }
 
 interface ElectronAPI {
@@ -89,6 +119,14 @@ interface ElectronAPI {
   onOpenNotesPanel: (callback: () => void) => () => void;
   onOpenAPISettings: (callback: () => void) => () => void;
   onNoteGenerated: (callback: (note: LearningNote) => void) => () => void;
+  // File Diff
+  getChangedFiles: (cwd: string) => Promise<string[]>;
+  getFileTree: (cwd: string) => Promise<FileNode[]>;
+  getFileDiff: (cwd: string, filePath: string) => Promise<FileDiffResult>;
+  readFile: (filePath: string) => Promise<{ content: string; error: string | null }>;
+  writeFile: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
+  revertFile: (cwd: string, filePath: string) => Promise<{ success: boolean; error?: string }>;
+  resolvePath: (cwd: string, target: string) => Promise<string | null>;
 }
 
 interface Window {

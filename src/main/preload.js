@@ -170,4 +170,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('note-generated', handler);
     return () => ipcRenderer.removeListener('note-generated', handler);
   },
+
+  // File Diff
+  getChangedFiles: (cwd) => {
+    return ipcRenderer.invoke('get-changed-files', cwd);
+  },
+
+  getFileTree: (cwd) => {
+    return ipcRenderer.invoke('get-file-tree', cwd);
+  },
+
+  getFileDiff: (cwd, filePath) => {
+    return ipcRenderer.invoke('get-file-diff', cwd, filePath);
+  },
+
+  readFile: (filePath) => {
+    return ipcRenderer.invoke('read-file', filePath);
+  },
+
+  writeFile: (filePath, content) => {
+    return ipcRenderer.invoke('write-file', filePath, content);
+  },
+
+  revertFile: (cwd, filePath) => {
+    return ipcRenderer.invoke('revert-file', cwd, filePath);
+  },
+
+  resolvePath: (cwd, target) => {
+    return ipcRenderer.invoke('resolve-path', cwd, target);
+  },
 });

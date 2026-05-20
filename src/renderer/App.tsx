@@ -8,6 +8,7 @@ import ThemeDialog from './ThemeDialog';
 import ImageOCRDialog from './ImageOCRDialog';
 import NotesPanel from './NotesPanel';
 import APISettingsDialog from './APISettingsDialog';
+import FileDiffDialog from './FileDiffDialog';
 import { assignTabColor } from './tabColors';
 import type { TabColor } from './tabColors';
 import { addRecentCommand, addRecentProject } from './commandTracker';
@@ -41,6 +42,8 @@ function App() {
   const [noteMode, setNoteMode] = useState(false);
   const [notesPanelOpen, setNotesPanelOpen] = useState(false);
   const [apiSettingsOpen, setApiSettingsOpen] = useState(false);
+  const [fileDiffOpen, setFileDiffOpen] = useState(false);
+  const [fileDiffProjectPath, setFileDiffProjectPath] = useState<string | null>(null);
   const [notes, setNotes] = useState<LearningNote[]>([]);
   const [apiConfig, setApiConfig] = useState<APIConfig>(() => {
     try {
@@ -69,6 +72,10 @@ function App() {
   });
 
   const activeTab = tabs.find((t) => t.tabId === activeTabId);
+
+  // Track CWD overrides from cd commands in terminal
+  const tabCwdOverrides = useRef<Record<string, string>>({});
+  const [, setCwdTick] = useState(0);
 
   const handleSummarize = useCallback(async () => {
     const monitor = convMonitorRef.current;
@@ -286,6 +293,45 @@ function App() {
     return cleanup;
   }, [handleSummarize]);
 
+  // Monitor PTY output for cd commands (so AI-initiated directory
+  // changes also update the file-diff button's project directory).
+  useEffect(() => {
+    let buf = '';
+    const cleanup = window.electronAPI.onPtyOutput((eventTabId, data) => {
+      if (!activeTabId || eventTabId !== activeTabId) return;
+      buf += data;
+      // Keep only the last ~2KB to avoid unbounded growth
+      if (buf.length > 4096) buf = buf.slice(-2048);
+      // Strip ANSI escape sequences
+      const stripped = buf.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+      // Match cd /d X:\path or cd X:\path (Windows / PowerShell / bash)
+      const cdMatch = stripped.match(/(?:^|\n|\r)[\s>]*cd(?:\s+\/d)?\s+["']?([A-Za-z]:\\[^\s"'\r\n]+)/m);
+      if (cdMatch) {
+        const target = cdMatch[1].trim();
+        const cwd = tabCwdOverrides.current[activeTabId] || activeTab?.projectPath || activeTab?.cwd;
+        window.electronAPI.resolvePath(cwd || '', target).then((resolved) => {
+          if (resolved) {
+            tabCwdOverrides.current = { ...tabCwdOverrides.current, [activeTabId]: resolved };
+            setCwdTick(t => t + 1);
+          }
+        }).catch(() => {});
+      }
+      // PowerShell: Set-Location
+      const slMatch = stripped.match(/(?:^|\n|\r)[\s>]*Set-Location\s+["']?([A-Za-z]:\\[^\s"'\r\n]+)/im);
+      if (slMatch) {
+        const target = slMatch[1].trim();
+        const cwd = tabCwdOverrides.current[activeTabId] || activeTab?.projectPath || activeTab?.cwd;
+        window.electronAPI.resolvePath(cwd || '', target).then((resolved) => {
+          if (resolved) {
+            tabCwdOverrides.current = { ...tabCwdOverrides.current, [activeTabId]: resolved };
+            setCwdTick(t => t + 1);
+          }
+        }).catch(() => {});
+      }
+    });
+    return cleanup;
+  }, [activeTabId, activeTab]);
+
   // Cleanup conversation monitor on unmount
   useEffect(() => {
     return () => {
@@ -329,19 +375,51 @@ function App() {
     }
   }, []);
 
-  const handleWriteCommand = useCallback((command: string) => {
+  const handleWriteCommand = useCallback((command: string, projectPath?: string) => {
     if (writing || !activeTabId) return;
     setWriting(true);
     window.electronAPI.writeToTerminal(activeTabId, command);
     addRecentCommand(command, 'panel');
+    if (projectPath) {
+      tabCwdOverrides.current = { ...tabCwdOverrides.current, [activeTabId]: projectPath };
+      setCwdTick(t => t + 1);
+    } else {
+      // Fallback: detect session resume commands and look up project path.
+      // This handles the race where CommandPanel hasn't loaded sessions yet.
+      const ccMatch = command.match(/claude\s+-r\s+"([a-f0-9-]{30,40})"/i);
+      const cxMatch = command.match(/codex\s+resume\s+(\S+)/i);
+      const rxMatch = command.match(/reasonix\s+-c\s+"([^"]+)"/i);
+      if (ccMatch || cxMatch || rxMatch) {
+        const capturedTabId = activeTabId;
+        window.electronAPI.scanSessions().then((data) => {
+          let found: any;
+          if (ccMatch) found = data.cc?.find((s: any) => s.id === ccMatch[1]);
+          else if (cxMatch) found = data.codex?.find((s: any) => s.id === cxMatch[1]);
+          else if (rxMatch) found = data.reasonix?.find((s: any) => s.id === rxMatch![1]);
+          const pp = found?.projectPath || found?.cwd;
+          if (pp) {
+            tabCwdOverrides.current = { ...tabCwdOverrides.current, [capturedTabId]: pp };
+            setCwdTick(t => t + 1);
+          }
+        }).catch(() => {});
+      }
+    }
     termRef.current?.focus();
   }, [writing, activeTabId]);
 
-  const handleResumeSession = useCallback(async (tool: string, id: string, command: string) => {
+  const handleResumeSession = useCallback(async (tool: string, id: string, command: string, cwd: string, projectPath: string) => {
     if (writing) return;
     setWriting(true);
     try {
-      const tab = await window.electronAPI.createTab(null, null);
+      // Use the original cwd for the tab so CC/Codex/Reasonix can find
+      // the session (sessions are stored under the original project directory).
+      // Only override the file-diff button with the detected projectPath.
+      const tab = await window.electronAPI.createTab(cwd || null, null);
+      const dirForFileDiff = projectPath || cwd;
+      if (dirForFileDiff) {
+        tabCwdOverrides.current = { ...tabCwdOverrides.current, [tab.tabId]: dirForFileDiff };
+        setCwdTick(t => t + 1);
+      }
       window.electronAPI.writeToTerminal(tab.tabId, command);
       addRecentCommand(command, 'panel');
       termRef.current?.focus();
@@ -352,6 +430,22 @@ function App() {
 
   const handleCommandCapture = useCallback((command: string) => {
     addRecentCommand(command, 'terminal');
+
+    // Detect cd commands to track actual working directory
+    const cdMatch = command.trim().match(/^cd\s+(.+)$/i);
+    if (cdMatch && activeTabId) {
+      const target = cdMatch[1].trim();
+      // Try to resolve the target path
+      const cwd = activeTab?.projectPath || activeTab?.cwd;
+      if (cwd) {
+        window.electronAPI.resolvePath(cwd, target).then((resolved) => {
+          if (resolved) {
+            tabCwdOverrides.current = { ...tabCwdOverrides.current, [activeTabId]: resolved };
+            setCwdTick(t => t + 1);
+          }
+        }).catch(() => {});
+      }
+    }
 
     if (!noteMode) return;
     if (!apiConfig.apiKey) {
@@ -396,6 +490,13 @@ function App() {
     setOcrImageDataUrl(null);
     setOcrOpen(true);
   }, []);
+
+  const handleOpenFileDiff = useCallback(() => {
+    const dir = tabCwdOverrides.current[activeTabId] || activeTab?.projectPath || activeTab?.cwd;
+    if (!dir) return;
+    setFileDiffProjectPath(dir);
+    setFileDiffOpen(true);
+  }, [activeTabId, activeTab]);
 
   const handleSaveAPIConfig = useCallback((config: APIConfig) => {
     setApiConfig(config);
@@ -477,6 +578,7 @@ function App() {
             currentProjectPath={activeTab?.projectPath || null}
             onProjectOpen={handleProjectOpen}
             onOpenOCR={handleOpenOCR}
+            onOpenFileDiff={handleOpenFileDiff}
             onResumeSession={handleResumeSession}
           />
           <div className="terminal-wrapper">
@@ -537,6 +639,11 @@ function App() {
         config={apiConfig}
         onClose={() => setApiSettingsOpen(false)}
         onSave={handleSaveAPIConfig}
+      />
+      <FileDiffDialog
+        open={fileDiffOpen}
+        projectPath={fileDiffProjectPath}
+        onClose={() => { setFileDiffOpen(false); setFileDiffProjectPath(null); }}
       />
       {noteStatus && <div className="note-status-toast">{noteStatus}</div>}
     </div>

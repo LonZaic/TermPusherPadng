@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require('electron');
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
+const { execSync } = require('child_process');
 const pty = require('node-pty');
 const { createWorker } = require('tesseract.js');
 const { scanAllSessions } = require('./sessionScanner');
@@ -632,6 +634,229 @@ ipcMain.handle('export-notes', async (_event, { noteIds }) => {
 ipcMain.handle('get-notes-path', async () => {
   const { getNotesFilePath } = require('./noteManager');
   return getNotesFilePath();
+});
+
+// ---- File Diff IPC ----
+const IGNORE_DIRS = new Set(['node_modules', '.git', '.next', 'dist', 'build', '__pycache__', '.venv', 'venv', '.cache', '.idea', '.vscode']);
+const BINARY_EXTS = new Set(['.exe', '.dll', '.so', '.dylib', '.bin', '.o', '.obj', '.pyc', '.class', '.jar', '.zip', '.tar', '.gz', '.7z', '.rar', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.svg', '.webp', '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.woff', '.woff2', '.ttf', '.eot', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.wasm', '.map']);
+
+function execGit(args, cwd) {
+  try {
+    return execSync('git ' + args.join(' '), { cwd, encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function isGitRepo(cwd) {
+  try {
+    execSync('git rev-parse --git-dir', { cwd, encoding: 'utf-8', stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getAllFiles(dirPath, basePath, depth = 0) {
+  const files = [];
+  if (depth > 12) return files;
+  try {
+    const names = fs.readdirSync(dirPath);
+    for (const name of names) {
+      if (files.length >= 2000) break;
+      if (name.startsWith('.') && name !== '.env' && name !== '.env.example') continue;
+      if (IGNORE_DIRS.has(name)) continue;
+      const full = path.join(dirPath, name);
+      const rel = path.relative(basePath, full).replace(/\\/g, '/');
+      let stat;
+      try { stat = fs.statSync(full); } catch { continue; }
+      if (stat.isDirectory()) {
+        files.push(...getAllFiles(full, basePath, depth + 1));
+      } else if (stat.isFile()) {
+        if (BINARY_EXTS.has(path.extname(name).toLowerCase())) continue;
+        if (stat.size > 2 * 1024 * 1024) continue;
+        files.push(rel);
+      }
+    }
+  } catch { /* permission error */ }
+  return files;
+}
+
+let gTreeFileCount = 0;
+function buildFileTree(dirPath, basePath, changedSet, depth = 0) {
+  const entries = [];
+  if (depth > 12 || gTreeFileCount >= 3000) return entries;
+  try {
+    const names = fs.readdirSync(dirPath);
+    for (const name of names) {
+      if (gTreeFileCount >= 3000) break;
+      if (name.startsWith('.') && name !== '.env' && name !== '.env.example') continue;
+      if (IGNORE_DIRS.has(name)) continue;
+      const full = path.join(dirPath, name);
+      const rel = path.relative(basePath, full).replace(/\\/g, '/');
+      let stat;
+      try { stat = fs.statSync(full); } catch { continue; }
+      if (stat.isDirectory()) {
+        const children = buildFileTree(full, basePath, changedSet, depth + 1);
+        if (children.length > 0 || changedSet.has(rel)) {
+          entries.push({ name, path: rel, isDir: true, children, changed: false });
+        }
+      } else if (stat.isFile()) {
+        // Skip binary-looking files
+        const ext = path.extname(name).toLowerCase();
+        if (BINARY_EXTS.has(ext)) continue;
+        if (stat.size > 2 * 1024 * 1024) continue; // skip >2MB
+        gTreeFileCount++;
+        entries.push({ name, path: rel, isDir: false, children: [], changed: changedSet.has(rel) });
+      }
+    }
+  } catch { /* permission error etc */ }
+  entries.sort((a, b) => {
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return entries;
+}
+
+ipcMain.handle('get-changed-files', (_event, cwd) => {
+  if (!isGitRepo(cwd)) {
+    // For non-git repos, only return files that would appear in a shallow scan
+    return getAllFiles(cwd, cwd).slice(0, 500);
+  }
+  const unstaged = execGit(['diff', '--name-only'], cwd);
+  const staged = execGit(['diff', '--name-only', '--cached'], cwd);
+  const changed = new Set([
+    ...(unstaged ? unstaged.split('\n').map(s => s.trim().replace(/\\/g, '/')) : []),
+    ...(staged ? staged.split('\n').map(s => s.trim().replace(/\\/g, '/')) : []),
+  ]);
+  return [...changed].filter(Boolean);
+});
+
+ipcMain.handle('get-file-tree', (_event, cwd) => {
+  gTreeFileCount = 0;
+  let changedSet;
+  if (!isGitRepo(cwd)) {
+    // Don't pre-scan all files for non-git repos — too slow for large dirs.
+    // Individual file diffs will still show all-green on demand.
+    changedSet = new Set();
+  } else {
+    const changed = execGit(['diff', '--name-only'], cwd);
+    const staged = execGit(['diff', '--name-only', '--cached'], cwd);
+    changedSet = new Set([
+      ...(changed ? changed.split('\n').map(s => s.trim().replace(/\\/g, '/')) : []),
+      ...(staged ? staged.split('\n').map(s => s.trim().replace(/\\/g, '/')) : []),
+    ].filter(Boolean));
+  }
+  return buildFileTree(cwd, cwd, changedSet);
+});
+
+ipcMain.handle('get-file-diff', (_event, cwd, filePath) => {
+  if (!isGitRepo(cwd)) {
+    // Non-git: entire file is treated as new (all green)
+    try {
+      const fullPath = path.join(cwd, filePath);
+      const content = fs.readFileSync(fullPath, 'utf-8');
+      const lines = content.split('\n');
+      return {
+        file: filePath,
+        diff: [{
+          oldStart: 0, oldLines: 0,
+          newStart: 1, newLines: lines.length,
+          lines: lines.map((content, i) => ({ type: 'add', newLine: i + 1, content })),
+        }],
+        staged: [],
+      };
+    } catch {
+      return { file: filePath, diff: [], staged: [] };
+    }
+  }
+
+  const diff = execGit(['diff', '--', filePath], cwd);
+  const staged = execGit(['diff', '--cached', '--', filePath], cwd);
+
+  const parseHunks = (text) => {
+    const lines = text.split('\n');
+    const hunks = [];
+    let cur = null;
+    for (const line of lines) {
+      if (line.startsWith('@@')) {
+        const m = line.match(/@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@/);
+        if (m) {
+          cur = {
+            oldStart: parseInt(m[1], 10),
+            oldLines: parseInt(m[2] || '1', 10),
+            newStart: parseInt(m[3], 10),
+            newLines: parseInt(m[4] || '1', 10),
+            lines: [],
+          };
+          hunks.push(cur);
+        }
+      } else if (cur) {
+        if (line.startsWith('+')) {
+          cur.lines.push({ type: 'add', newLine: cur.newStart + cur.lines.filter(l => l.type !== 'delete').length, content: line.slice(1) });
+        } else if (line.startsWith('-')) {
+          cur.lines.push({ type: 'delete', oldLine: cur.oldStart + cur.lines.filter(l => l.type === 'delete' || l.type === 'context').length, content: line.slice(1) });
+        } else if (line.startsWith(' ') || line === '') {
+          cur.lines.push({ type: 'context', oldLine: cur.oldStart + cur.lines.filter(l => l.type === 'delete' || l.type === 'context').length, newLine: cur.newStart + cur.lines.filter(l => l.type !== 'delete').length, content: line.slice(1) });
+        }
+      }
+    }
+    return hunks;
+  };
+
+  return {
+    file: filePath,
+    diff: parseHunks(diff),
+    staged: parseHunks(staged),
+  };
+});
+
+ipcMain.handle('read-file', (_event, filePath) => {
+  try {
+    return { content: fs.readFileSync(filePath, 'utf-8'), error: null };
+  } catch (err) {
+    return { content: '', error: err.message };
+  }
+});
+
+ipcMain.handle('write-file', (_event, filePath, content) => {
+  try {
+    fs.writeFileSync(filePath, content, 'utf-8');
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('revert-file', (_event, cwd, filePath) => {
+  if (!isGitRepo(cwd)) {
+    return { success: false, error: 'Not a git repository — cannot revert' };
+  }
+  try {
+    execGit(['checkout', '--', filePath], cwd);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('resolve-path', (_event, cwd, target) => {
+  try {
+    if (path.isAbsolute(target)) {
+      const resolved = path.resolve(target);
+      if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+        return resolved;
+      }
+      return resolved; // return anyway, might be a new dir
+    }
+    const resolved = path.resolve(cwd, target);
+    if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+      return resolved;
+    }
+    return resolved;
+  } catch {
+    return null;
+  }
 });
 
 // ---- App lifecycle ----

@@ -51,6 +51,31 @@ function decodeProjectDirName(dirName) {
 }
 
 /**
+ * Reconstruct the full project path from Claude Code's encoded directory name.
+ * Claude Code encodes "E:\\CCBar" → "E--CCBar" (':' → '-', '\\' → '-')
+ * This function reverses it: "E--CCBar" → "E:\\CCBar"
+ */
+function decodeProjectPath(dirName) {
+  // Filter empty segments caused by consecutive dashes in the encoded name.
+  // "C--Users--xxx" → ['C','Users','xxx']; "C--Users----" (truncated) → ['C','Users']
+  const parts = dirName.split('--').filter(p => p.length > 0);
+  if (parts.length >= 3 && parts[0].length === 1) {
+    // Multi-segment path: drive + at least two folders — trustworthy
+    return parts[0] + ':\\' + parts.slice(1).join('\\');
+  }
+  if (parts.length === 2 && parts[0].length === 1) {
+    // Two segments: drive + one folder
+    const reconstructed = parts[0] + ':\\' + parts.slice(1).join('\\');
+    // Reject "X:\\Users" — almost certainly a truncated home directory
+    if (reconstructed.toLowerCase().endsWith(':\\users')) {
+      return null;
+    }
+    return reconstructed;
+  }
+  return null;
+}
+
+/**
  * Extract the first user message from a Claude Code jsonl file.
  * Returns null if no user message found.
  */
@@ -85,6 +110,81 @@ function extractTitleFromJsonl(filePath) {
     }
   } catch { /* skip unreadable files */ }
   return null;
+}
+
+/**
+ * Scan a Claude Code jsonl file for absolute Windows file paths
+ * referenced in tool_use entries, and return the most likely
+ * project root directory.
+ *
+ * Used as a fallback when the encoded project directory name
+ * can't be decoded (e.g. C--Users---- where the tail is truncated).
+ */
+function extractProjectPathFromJsonl(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat || stat.size < 100) return null;
+
+    const fd = fs.openSync(filePath, 'r');
+    // Read first 512KB + last 256KB to catch both early and late file refs
+    const headSize = Math.min(524288, stat.size);
+    const tailSize = stat.size > headSize ? Math.min(262144, stat.size - headSize) : 0;
+    const bufSize = headSize + tailSize;
+    const buf = Buffer.alloc(bufSize);
+    const headRead = fs.readSync(fd, buf, 0, headSize, 0);
+    let totalRead = headRead;
+    if (tailSize > 0) {
+      totalRead += fs.readSync(fd, buf, headRead, tailSize, stat.size - tailSize);
+    }
+    fs.closeSync(fd);
+
+    const raw = buf.slice(0, totalRead).toString('utf-8');
+
+    // Track candidate directories: key → { count, depth }
+    const candidates = new Map();
+    // JSON-escaped paths in the raw text use \\ as path separator.
+    // Capture the entire value string, then JSON.parse it to unescape.
+    const RE_FILE_PATH = /"file_path"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+    let match;
+    while ((match = RE_FILE_PATH.exec(raw)) !== null) {
+      let fp;
+      try {
+        fp = JSON.parse('"' + match[1] + '"');
+      } catch {
+        continue;
+      }
+      // Only process absolute Windows paths (X:\...)
+      if (!/^[A-Za-z]:\\/.test(fp)) continue;
+      const parts = fp.split('\\').filter(p => p.length > 0);
+      if (parts.length < 2) continue;
+      // Generate candidates at depths 2 through min(len-1, 5)
+      // depth=2 → X:\folder, depth=3 → X:\folder\sub, etc.
+      for (let depth = 2; depth <= Math.min(parts.length - 1, 5); depth++) {
+        const candidate = parts.slice(0, depth).join('\\');
+        const prev = candidates.get(candidate) || { count: 0, depth };
+        prev.count++;
+        candidates.set(candidate, prev);
+      }
+    }
+
+    if (candidates.size === 0) return null;
+
+    // Score = count × depth — prefer deeper paths backed by many files
+    let best = null;
+    let bestScore = 0;
+    for (const [candidate, { count, depth }] of candidates) {
+      // Skip C:\Users — that's the home directory, not a project
+      if (candidate.toLowerCase().startsWith('c:\\users')) continue;
+      const score = count * depth;
+      if (score > bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+    }
+    return best;
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================
@@ -129,13 +229,27 @@ function scanClaudeCodeSessions() {
       const meta = sessionMeta.get(sessionId);
       const title = extractTitleFromJsonl(filePath);
 
+      const decodedPath = decodeProjectPath(dirName);
+      const sessionCwd = meta ? meta.cwd : '';
+
+      // If the directory name couldn't be decoded, try extracting
+      // the real project path from file references in the jsonl
+      let projectPath = decodedPath;
+      if (!projectPath) {
+        projectPath = extractProjectPathFromJsonl(filePath);
+      }
+      if (!projectPath) {
+        projectPath = sessionCwd;
+      }
+
       results.push({
         id: sessionId,
         tool: 'cc',
         toolName: 'Claude Code',
         title: title || `会话 ${sessionId.slice(0, 8)}`,
-        subtitle: projectName || (meta ? meta.cwd : ''),
-        cwd: meta ? meta.cwd : '',
+        subtitle: projectName || sessionCwd,
+        cwd: sessionCwd,
+        projectPath,
         startedAt: meta ? meta.startedAt : fileStat.birthtimeMs,
         updatedAt: fileStat.mtimeMs,
         kind: meta ? meta.kind : 'interactive',

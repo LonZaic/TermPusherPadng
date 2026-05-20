@@ -2382,3 +2382,509 @@ html, body, #root {
   from { opacity: 0; transform: translateX(-50%) translateY(10px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
+
+/* ---- File Diff Dialog ---- */
+.filediff-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filediff-dialog {
+  width: 90vw;
+  max-width: 1200px;
+  height: 85vh;
+  background: var(--app-bg);
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.filediff-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-bg-secondary);
+  flex-shrink: 0;
+}
+
+.filediff-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.filediff-subtitle {
+  font-size: 11px;
+  color: var(--app-text-secondary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.filediff-close-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.filediff-close-btn:hover {
+  background: var(--app-bg-tertiary);
+  color: var(--app-text);
+}
+
+.filediff-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Left: File Tree */
+.filediff-tree {
+  width: 260px;
+  min-width: 200px;
+  border-right: 1px solid var(--app-border);
+  background: var(--app-bg-secondary);
+  display: flex;
+  flex-direction: column;
+}
+
+.filediff-tree-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--app-text-secondary);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--app-border);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.filediff-tree-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.filediff-loading,
+.filediff-empty {
+  padding: 16px 12px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.filediff-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--app-text);
+  border-radius: 0;
+  transition: background 0.1s ease;
+  user-select: none;
+}
+
+.filediff-tree-item.file {
+  color: var(--app-text);
+}
+
+.filediff-tree-item:hover {
+  background: var(--app-bg);
+}
+
+.filediff-tree-item.file.active {
+  background: var(--app-accent);
+  color: #fff;
+}
+
+.filediff-tree-item.file.changed {
+  color: #f9e2af;
+}
+
+.filediff-tree-item.file.changed.active {
+  color: #fff;
+}
+
+.filediff-tree-item.dir.has-changed {
+  color: #f9e2af;
+}
+
+.filediff-tree-arrow {
+  font-size: 10px;
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--app-text-secondary);
+}
+
+.filediff-tree-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.filediff-tree-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.filediff-tree-badge {
+  font-size: 8px;
+  color: #f9e2af;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Right: Content */
+.filediff-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--app-bg);
+}
+
+/* Tabs */
+.filediff-tabs {
+  display: flex;
+  gap: 0;
+  background: var(--app-bg-secondary);
+  border-bottom: 1px solid var(--app-border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.filediff-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  cursor: pointer;
+  border-right: 1px solid var(--app-border);
+  white-space: nowrap;
+  transition: background 0.1s ease;
+  flex-shrink: 0;
+}
+
+.filediff-tab:hover {
+  background: var(--app-bg);
+}
+
+.filediff-tab.active {
+  background: var(--app-bg);
+  color: var(--app-text);
+  border-bottom: 2px solid var(--app-accent);
+  margin-bottom: -1px;
+}
+
+.filediff-tab-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.filediff-tab-dirty {
+  font-size: 8px;
+  color: #f9e2af;
+}
+
+.filediff-tab-close {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--app-text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.filediff-tab-close:hover {
+  background: rgba(243, 139, 168, 0.2);
+  color: #f38ba8;
+}
+
+/* Editor Area */
+.filediff-editor-area {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+}
+
+.filediff-textarea {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--app-text);
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 8px 12px 8px 56px;
+  resize: none;
+  outline: none;
+  z-index: 2;
+  tab-size: 4;
+  overflow-y: auto;
+}
+
+.filediff-textarea::selection {
+  background: rgba(30, 102, 245, 0.3);
+}
+
+.filediff-diff-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 8px 12px 8px 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.filediff-line {
+  display: flex;
+  padding: 0;
+  line-height: 1.55;
+  min-height: 20px;
+}
+
+.filediff-line.diff-add {
+  background: rgba(166, 227, 161, 0.12);
+}
+
+.filediff-line.diff-delete {
+  background: rgba(243, 139, 168, 0.12);
+}
+
+.filediff-line-num {
+  width: 36px;
+  padding-right: 8px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--app-text-secondary);
+  opacity: 0.5;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.filediff-line-sign {
+  width: 14px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.filediff-line.diff-add .filediff-line-sign {
+  color: #a6e3a1;
+}
+
+.filediff-line.diff-delete .filediff-line-sign {
+  color: #f38ba8;
+}
+
+.filediff-line-content {
+  white-space: pre;
+  font-size: 13px;
+  color: var(--app-text);
+}
+
+.filediff-line.diff-add .filediff-line-content {
+  color: #a6e3a1;
+}
+
+.filediff-line.diff-delete .filediff-line-content {
+  color: #f38ba8;
+}
+
+.filediff-no-tab,
+.filediff-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-text-secondary);
+  font-size: 13px;
+  gap: 8px;
+}
+
+.filediff-placeholder-icon {
+  font-size: 36px;
+  opacity: 0.3;
+}
+
+/* Footer */
+.filediff-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-bg-secondary);
+  flex-shrink: 0;
+}
+
+.filediff-footer-btn {
+  padding: 7px 22px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-bg-tertiary);
+  color: var(--app-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.filediff-footer-btn:hover:not(:disabled) {
+  background: var(--app-bg);
+  border-color: var(--app-text-secondary);
+}
+
+.filediff-footer-btn.primary {
+  border: none;
+  background: #555;
+  color: #999;
+}
+
+.filediff-footer-btn.primary.active {
+  background: #40a02b;
+  color: #fff;
+}
+
+.filediff-footer-btn.primary.active:hover {
+  filter: brightness(1.15);
+}
+
+.filediff-footer-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.filediff-toast {
+  position: absolute;
+  bottom: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 20px;
+  background: var(--app-bg-tertiary);
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  color: var(--app-text);
+  font-size: 12px;
+  z-index: 200;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  animation: note-toast-in 0.3s ease;
+}
+
+/* Workflow file button */
+.workflow-file-btn {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.workflow-file-wrapper {
+  position: relative;
+}
+
+.workflow-project-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 6px;
+  background: var(--panel-bg, #1e1e2e);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 10px;
+  min-width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 200;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.workflow-project-menu-header {
+  padding: 10px 14px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted, #888);
+}
+
+.workflow-project-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.workflow-project-menu-item:hover {
+  background: var(--hover-bg, rgba(255,255,255,0.06));
+}
+
+.workflow-project-menu-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.workflow-project-menu-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary, #e0e0e0);
+  flex-shrink: 0;
+}
+
+.workflow-project-menu-path {
+  font-size: 11px;
+  color: var(--text-muted, #666);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-project-menu-empty {
+  padding: 14px;
+  font-size: 12px;
+  color: var(--text-muted, #666);
+  text-align: center;
+}

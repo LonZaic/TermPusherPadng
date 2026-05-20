@@ -67,12 +67,13 @@ function saveSessionRenames(renames: Record<string, string>) {
 }
 
 interface CommandPanelProps {
-  onWriteCommand: (command: string) => void;
+  onWriteCommand: (command: string, projectPath?: string) => void;
   writing: boolean;
   currentProjectPath: string | null;
   onProjectOpen?: (projectPath: string) => void;
   onOpenOCR?: () => void;
-  onResumeSession?: (tool: string, id: string, command: string) => void;
+  onResumeSession?: (tool: string, id: string, command: string, cwd: string, projectPath: string) => void;
+  onOpenFileDiff?: () => void;
 }
 
 const SESSION_RESUME_COMMAND: Record<string, (id: string) => string> = {
@@ -105,7 +106,7 @@ function formatTimeAgo(ts: number): string {
   return new Date(ts).toLocaleDateString('zh-CN');
 }
 
-function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOpen, onOpenOCR, onResumeSession }: CommandPanelProps) {
+function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOpen, onOpenOCR, onResumeSession, onOpenFileDiff }: CommandPanelProps) {
   const [activeTool, setActiveTool] = useState(TOOL_GROUPS[0]?.id ?? 'cc');
   const [activeTab, setActiveTab] = useState('');
   const [customCommands, setCustomCommands] = useState<CustomCommand[]>(loadCustomCommands);
@@ -115,7 +116,6 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
   const [searchQuery, setSearchQuery] = useState('');
   const [recentCommands, setRecentCommands] = useState<RecentCommand[]>(getRecentCommands);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>(getRecentProjects);
-  const [showRecentProjects, setShowRecentProjects] = useState(false);
 
   // Auto-enter toggle
   const [autoEnter, setAutoEnter] = useState(loadAutoEnter);
@@ -220,9 +220,9 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
     }
   }, [activeTool]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load sessions when switching to history tab
+  // Load sessions eagerly so findSessionProjectPath works for recent commands
   useEffect(() => {
-    if (isHistory && !sessions) {
+    if (!sessions) {
       setSessionsLoading(true);
       window.electronAPI.scanSessions().then((data) => {
         setSessions(data);
@@ -231,7 +231,7 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
         setSessionsLoading(false);
       });
     }
-  }, [isHistory, sessions]);
+  }, [sessions]);
 
   const handleAddCustom = useCallback((name: string, command: string, overrideTarget: string | null) => {
     const newCmd: CustomCommand = {
@@ -291,26 +291,51 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
   }, []);
 
   // Unified command writer
-  const writeCmd = useCallback((cmd: string) => {
+  const writeCmd = useCallback((cmd: string, projectPath?: string) => {
     const final = autoEnter ? cmd + '\r' : cmd;
-    onWriteCommand(final);
+    onWriteCommand(final, projectPath);
   }, [autoEnter, onWriteCommand]);
+
+  // Detect session ID in a command and return the session's projectPath
+  const findSessionProjectPath = useCallback((cmd: string): string | undefined => {
+    if (!sessions) return undefined;
+    // Match CC:   claude -r "uuid"
+    const ccMatch = cmd.match(/claude\s+-r\s+"([a-f0-9-]{30,40})"/i);
+    if (ccMatch) {
+      const found = sessions.cc.find(s => s.id === ccMatch[1]);
+      return found?.projectPath || found?.cwd;
+    }
+    // Match Codex: codex resume <id>
+    const cxMatch = cmd.match(/codex\s+resume\s+(\S+)/i);
+    if (cxMatch) {
+      const found = sessions.codex.find(s => s.id === cxMatch[1]);
+      return found?.projectPath || found?.cwd;
+    }
+    // Match Reasonix: reasonix -c "uuid"
+    const rxMatch = cmd.match(/reasonix\s+-c\s+"([^"]+)"/i);
+    if (rxMatch) {
+      const found = sessions.reasonix.find(s => s.id === rxMatch[1]);
+      return found?.projectPath || found?.cwd;
+    }
+    return undefined;
+  }, [sessions]);
 
   // Command click handler
   const handleCommandClick = useCallback((cmd: string) => {
     addCommandClick(cmd);
     addRecentCommand(cmd, 'panel');
     setRecentCommands(getRecentCommands());
-    writeCmd(cmd);
-  }, [writeCmd]);
+    const projectPath = findSessionProjectPath(cmd);
+    writeCmd(cmd, projectPath);
+  }, [writeCmd, findSessionProjectPath]);
 
   // Session resume handler — always opens a new tab
-  const handleSessionResume = useCallback((tool: string, id: string) => {
-    const cmdFn = SESSION_RESUME_COMMAND[tool];
+  const handleSessionResume = useCallback((s: SessionEntry) => {
+    const cmdFn = SESSION_RESUME_COMMAND[s.tool];
     if (cmdFn && onResumeSession) {
-      const cmd = cmdFn(id);
+      const cmd = cmdFn(s.id);
       const final = autoEnter ? cmd + '\r' : cmd;
-      onResumeSession(tool, id, final);
+      onResumeSession(s.tool, s.id, final, s.cwd, s.projectPath);
     }
   }, [autoEnter, onResumeSession]);
 
@@ -464,13 +489,15 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
 
       {/* Quick action buttons */}
       <div className="workflow-bar">
-        <button
-          className={`workflow-btn workflow-project-btn ${showRecentProjects ? 'active' : ''}`}
-          onClick={() => setShowRecentProjects(!showRecentProjects)}
-          title="最近项目"
-        >
-          &#x1F4C1;
-        </button>
+        {onOpenFileDiff && (
+          <button
+            className="workflow-btn workflow-file-btn"
+            onClick={onOpenFileDiff}
+            title="项目文件"
+          >
+            &#x1F4C1;
+          </button>
+        )}
         <button
           className={`workflow-btn workflow-auto-btn ${autoEnter ? 'active' : ''}`}
           onClick={() => setAutoEnter(!autoEnter)}
@@ -488,30 +515,6 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
           </button>
         )}
       </div>
-
-      {/* Recent projects dropdown */}
-      {showRecentProjects && (
-        <div className="recent-projects-dropdown">
-          {recentProjects.length === 0 ? (
-            <div className="recent-projects-empty">暂无最近项目</div>
-          ) : (
-            recentProjects.map((p) => (
-              <button
-                key={p.path}
-                className="recent-project-item"
-                onClick={() => {
-                  handleProjectClick(p.path);
-                  setShowRecentProjects(false);
-                }}
-                title={p.path}
-              >
-                <span className="recent-project-name">{p.name}</span>
-                <span className="recent-project-path">{p.path}</span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
 
       {/* Header */}
       <div className="command-panel-header">
@@ -652,7 +655,7 @@ function CommandPanel({ onWriteCommand, writing, currentProjectPath, onProjectOp
                         )}
                         <button
                           className="session-resume-btn"
-                          onClick={() => handleSessionResume(s.tool, s.id)}
+                          onClick={() => handleSessionResume(s)}
                           disabled={writing}
                           title="恢复到新标签页"
                         >
