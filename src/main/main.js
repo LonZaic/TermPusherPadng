@@ -163,6 +163,14 @@ function safeWebContents(bw) {
   try { return bw && !bw.isDestroyed() ? bw.webContents : null; } catch { return null; }
 }
 
+function sendToFocused(channel, data) {
+  try {
+    const win = BrowserWindow.getFocusedWindow();
+    const wc = safeWebContents(win);
+    if (wc) wc.send(channel, data);
+  } catch (err) { console.error(`[menu] ${channel} error:`, err.message); }
+}
+
 // ---- Menu ----
 function buildMenu() {
   const template = [
@@ -328,6 +336,50 @@ function buildMenu() {
         },
       ],
     },
+    {
+      label: 'Weather',
+      submenu: [
+        {
+          label: 'Rain',
+          submenu: [
+            {
+              label: 'Light Rain  🌂',
+              click: () => sendToFocused('weather-change', { type: 'rain', intensity: 'light' }),
+            },
+            {
+              label: 'Medium Rain  🌧',
+              click: () => sendToFocused('weather-change', { type: 'rain', intensity: 'medium' }),
+            },
+            {
+              label: 'Heavy Rain  ⛈',
+              click: () => sendToFocused('weather-change', { type: 'rain', intensity: 'heavy' }),
+            },
+          ],
+        },
+        {
+          label: 'Snow',
+          submenu: [
+            {
+              label: 'Light Snow  ❄',
+              click: () => sendToFocused('weather-change', { type: 'snow', intensity: 'light' }),
+            },
+            {
+              label: 'Medium Snow  🌨',
+              click: () => sendToFocused('weather-change', { type: 'snow', intensity: 'medium' }),
+            },
+            {
+              label: 'Heavy Snow  ❄️',
+              click: () => sendToFocused('weather-change', { type: 'snow', intensity: 'heavy' }),
+            },
+          ],
+        },
+        { type: 'separator' },
+        {
+          label: 'Turn Off Weather',
+          click: () => sendToFocused('weather-change', { type: 'off', intensity: 'light' }),
+        },
+      ],
+    },
   ];
 
   const menu = Menu.buildFromTemplate(template);
@@ -421,6 +473,7 @@ ipcMain.on('write-to-terminal', (event, { tabId, content }) => {
 });
 
 ipcMain.on('pty-resize', (event, { tabId, cols, rows }) => {
+  if (!cols || !rows || cols < 1 || rows < 1) return;
   const ws = getWindowForEvent(event);
   if (!ws) return;
   const tab = ws.tabs.get(tabId);

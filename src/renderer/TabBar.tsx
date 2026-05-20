@@ -20,9 +20,11 @@ interface TabBarProps {
   onToggleNoteMode: () => void;
   notesPanelOpen: boolean;
   onToggleNotesPanel: () => void;
+  getIndicatorStatus: (tabId: string) => 'idle' | 'running' | 'waiting' | 'error' | 'completed';
+  indicatorTick: number;
 }
 
-function TabBar({ tabs, activeTabId, onSwitch, onClose, onNewConversation, noteMode, onToggleNoteMode, notesPanelOpen, onToggleNotesPanel }: TabBarProps) {
+function TabBar({ tabs, activeTabId, onSwitch, onClose, onNewConversation, noteMode, onToggleNoteMode, notesPanelOpen, onToggleNotesPanel, getIndicatorStatus, indicatorTick }: TabBarProps) {
   return (
     <div className="tab-bar">
       <div className="tab-list">
@@ -34,6 +36,9 @@ function TabBar({ tabs, activeTabId, onSwitch, onClose, onNewConversation, noteM
           const textColor = isActive
             ? `hsl(${tab.color.h}, ${tab.color.s}%, ${Math.max(15, tab.color.l - 35)}%)`
             : '#cdd6f4';
+
+          const indicator = tab.type === 'terminal' ? getIndicatorStatus(tab.tabId) : 'idle';
+          void indicatorTick; // re-render when indicators change
 
           return (
             <div
@@ -49,6 +54,7 @@ function TabBar({ tabs, activeTabId, onSwitch, onClose, onNewConversation, noteM
               onClick={() => onSwitch(tab.tabId)}
               title={tab.projectPath || tab.name}
             >
+              <span className={`tab-indicator ${indicator}`} />
               <span className="tab-label">
                 {tab.type === 'canvas' ? '\u{1F3A8} ' : ''}{tab.name}
               </span>

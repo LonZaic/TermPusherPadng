@@ -9,6 +9,8 @@ import ImageOCRDialog from './ImageOCRDialog';
 import NotesPanel from './NotesPanel';
 import APISettingsDialog from './APISettingsDialog';
 import FileDiffDialog from './FileDiffDialog';
+import WeatherEffect from './WeatherEffect';
+import type { WeatherType, WeatherIntensity } from './WeatherEffect';
 import { assignTabColor } from './tabColors';
 import type { TabColor } from './tabColors';
 import { addRecentCommand, addRecentProject } from './commandTracker';
@@ -44,6 +46,10 @@ function App() {
   const [apiSettingsOpen, setApiSettingsOpen] = useState(false);
   const [fileDiffOpen, setFileDiffOpen] = useState(false);
   const [fileDiffProjectPath, setFileDiffProjectPath] = useState<string | null>(null);
+
+  // Weather effect state (controlled via menu)
+  const [weatherType, setWeatherType] = useState<WeatherType>('off');
+  const [weatherIntensity, setWeatherIntensity] = useState<WeatherIntensity>('light');
   const [notes, setNotes] = useState<LearningNote[]>([]);
   const [apiConfig, setApiConfig] = useState<APIConfig>(() => {
     try {
@@ -76,6 +82,20 @@ function App() {
   // Track CWD overrides from cd commands in terminal
   const tabCwdOverrides = useRef<Record<string, string>>({});
   const [, setCwdTick] = useState(0);
+
+  // Breathing indicator state per tab
+  type IndicatorStatus = 'idle' | 'running' | 'waiting' | 'error' | 'completed';
+  const tabIndicators = useRef<Record<string, { status: IndicatorStatus; silenceTimer: ReturnType<typeof setTimeout> | null }>>({});
+  const [indicatorTick, setIndicatorTick] = useState(0);
+  // Only start breathing when the user has sent a command to this tab
+  const commandPending = useRef<Set<string>>(new Set());
+  // Avoid stale closure in silence timer callback
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
+
+  const getIndicatorStatus = useCallback((tabId: string): IndicatorStatus => {
+    return tabIndicators.current[tabId]?.status || 'idle';
+  }, []);
 
   const handleSummarize = useCallback(async () => {
     const monitor = convMonitorRef.current;
@@ -270,6 +290,10 @@ function App() {
       window.electronAPI.onToggleNoteMode(() => setNoteMode(v => !v)),
       window.electronAPI.onOpenNotesPanel(() => setNotesPanelOpen(true)),
       window.electronAPI.onOpenAPISettings(() => setApiSettingsOpen(true)),
+      window.electronAPI.onWeatherChange((data) => {
+        setWeatherType(data.type as WeatherType);
+        setWeatherIntensity(data.intensity as WeatherIntensity);
+      }),
     ];
     return () => unsubs.forEach(fn => fn());
   }, []);
@@ -332,6 +356,62 @@ function App() {
     return cleanup;
   }, [activeTabId, activeTab]);
 
+  // Monitor PTY output for breathing indicator status
+  useEffect(() => {
+    const SILENCE_MS = 2500;
+    const cleanup = window.electronAPI.onPtyOutput((eventTabId, data) => {
+      // Strip ANSI for pattern matching
+      const plain = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+      if (plain.length === 0) return;
+
+      let entry = tabIndicators.current[eventTabId];
+      if (!entry) {
+        entry = { status: 'idle', silenceTimer: null };
+        tabIndicators.current[eventTabId] = entry;
+      }
+
+      // Clear existing silence timer
+      if (entry.silenceTimer) {
+        clearTimeout(entry.silenceTimer);
+        entry.silenceTimer = null;
+      }
+
+      // Error patterns (check first — highest priority)
+      if (/(?:error|failed|exception|traceback|timeout|refused|ENOENT|EACCES|EPERM|abort|aborted|status\s*(?:4\d{2}|5\d{2}))/i.test(plain)) {
+        entry.status = 'error';
+      } else if (entry.status !== 'error' && /(?:\[y\/[nN]\]|\[Y\/n\]|\(y\/n\)|Do you want|Proceed\?|Continue\?|[Yy]es\/[Nn]o\b|confirm|\[Y\/N\/\?\])/i.test(plain)) {
+        // Prompt patterns — only if not already in error state
+        entry.status = 'waiting';
+      } else if ((entry.status === 'idle' || entry.status === 'completed') && commandPending.current.has(eventTabId)) {
+        // Only start breathing when the user has sent a command to this tab
+        commandPending.current.delete(eventTabId);
+        entry.status = 'running';
+      }
+
+      // Reset silence timer: after SILENCE_MS without output,
+      // transition running/waiting/error → idle (if active tab) or completed (if background)
+      const capturedTabId = eventTabId;
+      entry.silenceTimer = setTimeout(() => {
+        const e = tabIndicators.current[capturedTabId];
+        if (!e) return;
+        if (e.status === 'running' || e.status === 'waiting' || e.status === 'error') {
+          e.status = capturedTabId === activeTabIdRef.current ? 'idle' : 'completed';
+          e.silenceTimer = null;
+          setIndicatorTick(t => t + 1);
+        }
+      }, SILENCE_MS);
+
+      setIndicatorTick(t => t + 1);
+    });
+    return () => {
+      cleanup();
+      // Clear all silence timers
+      for (const entry of Object.values(tabIndicators.current)) {
+        if (entry.silenceTimer) clearTimeout(entry.silenceTimer);
+      }
+    };
+  }, []);
+
   // Cleanup conversation monitor on unmount
   useEffect(() => {
     return () => {
@@ -342,6 +422,15 @@ function App() {
   }, []);
 
   const handleSwitchTab = useCallback(async (tabId: string) => {
+    // Clear indicator for the tab being activated
+    const entry = tabIndicators.current[tabId];
+    if (entry && (entry.status === 'completed' || entry.status === 'error')) {
+      entry.status = 'idle';
+      if (entry.silenceTimer) { clearTimeout(entry.silenceTimer); entry.silenceTimer = null; }
+      setIndicatorTick(t => t + 1);
+    }
+    // Clear any stale commandPending (safety net)
+    commandPending.current.delete(tabId);
     if (tabId === activeTabId) return;
     const result = await window.electronAPI.switchTab(tabId);
     setActiveTabId(result.tabId);
@@ -378,6 +467,7 @@ function App() {
   const handleWriteCommand = useCallback((command: string, projectPath?: string) => {
     if (writing || !activeTabId) return;
     setWriting(true);
+    commandPending.current.add(activeTabId);
     window.electronAPI.writeToTerminal(activeTabId, command);
     addRecentCommand(command, 'panel');
     if (projectPath) {
@@ -415,6 +505,7 @@ function App() {
       // the session (sessions are stored under the original project directory).
       // Only override the file-diff button with the detected projectPath.
       const tab = await window.electronAPI.createTab(cwd || null, null);
+      commandPending.current.add(tab.tabId);
       const dirForFileDiff = projectPath || cwd;
       if (dirForFileDiff) {
         tabCwdOverrides.current = { ...tabCwdOverrides.current, [tab.tabId]: dirForFileDiff };
@@ -432,6 +523,9 @@ function App() {
   const handleCommandCapture = useCallback((command: string) => {
     addRecentCommand(command, 'terminal');
     window.dispatchEvent(new CustomEvent('refresh-recent'));
+
+    // Mark this tab as having a pending command → breathing starts on next PTY output
+    if (activeTabId) commandPending.current.add(activeTabId);
 
     // Detect cd commands to track actual working directory
     const cdMatch = command.trim().match(/^cd\s+(.+)$/i);
@@ -569,6 +663,8 @@ function App() {
           onClose={handleCloseTab}
           onNewConversation={handleNewConversation}
           noteMode={noteMode}
+          getIndicatorStatus={getIndicatorStatus}
+          indicatorTick={indicatorTick}
           onToggleNoteMode={() => setNoteMode(v => !v)}
           notesPanelOpen={notesPanelOpen}
           onToggleNotesPanel={() => setNotesPanelOpen(v => !v)}
@@ -648,6 +744,7 @@ function App() {
         onClose={() => { setFileDiffOpen(false); setFileDiffProjectPath(null); }}
       />
       {noteStatus && <div className="note-status-toast">{noteStatus}</div>}
+      <WeatherEffect type={weatherType} intensity={weatherIntensity} />
     </div>
   );
 }

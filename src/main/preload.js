@@ -165,6 +165,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('open-api-settings', handler);
   },
 
+  onWeatherChange: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('weather-change', handler);
+    return () => ipcRenderer.removeListener('weather-change', handler);
+  },
+
   onNoteGenerated: (callback) => {
     const handler = (_event, note) => callback(note);
     ipcRenderer.on('note-generated', handler);

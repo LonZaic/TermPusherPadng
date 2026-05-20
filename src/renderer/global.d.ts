@@ -119,6 +119,8 @@ interface ElectronAPI {
   onOpenNotesPanel: (callback: () => void) => () => void;
   onOpenAPISettings: (callback: () => void) => () => void;
   onNoteGenerated: (callback: (note: LearningNote) => void) => () => void;
+  // Weather
+  onWeatherChange: (callback: (data: { type: string; intensity: string }) => void) => () => void;
   // File Diff
   getChangedFiles: (cwd: string) => Promise<string[]>;
   getFileTree: (cwd: string) => Promise<FileNode[]>;

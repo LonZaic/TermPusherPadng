@@ -79,25 +79,44 @@ const TerminalPanel = forwardRef<{ focus: () => void }, TerminalPanelProps>(({ t
       },
       allowTransparency: false,
       cols: 80,
-      rows: 24,
+      rows: 30,
     });
 
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(terminalRef.current);
     fit.fit();
+
+    // Immediately sync PTY dimensions after init fit so xterm.js and PTY
+    // stay in agreement from the start. LastCols/lastRows track this so the
+    // ResizeObserver doesn't fire a duplicate resize.
+    const initDims = fit.proposeDimensions();
+    if (initDims && initDims.cols > 0 && initDims.rows > 0) {
+      window.electronAPI.ptyResize(tabId, initDims.cols, initDims.rows);
+    }
+
     term.focus();
 
     fitAddon.current = fit;
     termInstance.current = term;
 
-    // Resize observer
+    // Resize observer — only notify PTY when cols/rows actually change.
+    // Update tracked dimensions immediately so rapid callbacks don't keep
+    // resetting the debounce timer; only the ptyResize IPC is debounced.
+    let lastCols = initDims?.cols ?? 0;
+    let lastRows = initDims?.rows ?? 0;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const resizeObserver = new ResizeObserver(() => {
       try {
         fit.fit();
         const dims = fit.proposeDimensions();
-        if (dims) {
-          window.electronAPI.ptyResize(tabId, dims.cols, dims.rows);
+        if (dims && (dims.cols !== lastCols || dims.rows !== lastRows)) {
+          lastCols = dims.cols;
+          lastRows = dims.rows;
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            window.electronAPI.ptyResize(tabId, dims.cols, dims.rows);
+          }, 100);
         }
       } catch { /* ignore */ }
     });
@@ -186,12 +205,31 @@ const TerminalPanel = forwardRef<{ focus: () => void }, TerminalPanelProps>(({ t
     return cleanup;
   }, [tabId]);
 
-  // Forward keystrokes to PTY + capture commands
+  // Forward keystrokes to PTY + capture commands + clipboard
   useEffect(() => {
     const term = termInstance.current;
     if (!term) return;
 
     let lineBuf = '';
+
+    // --- Copy on selection ---
+    const selDispose = term.onSelectionChange(() => {
+      const sel = term.getSelection();
+      if (sel) {
+        navigator.clipboard.writeText(sel).catch(() => {});
+      }
+    });
+
+    // --- Right-click paste ---
+    const ctxHandler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.terminal-container')) return;
+      e.preventDefault();
+      navigator.clipboard.readText().then((text) => {
+        if (text) window.electronAPI.writeToTerminal(tabId, text);
+      }).catch(() => {});
+    };
+    document.addEventListener('contextmenu', ctxHandler);
 
     const onDataDispose = term.onData((data) => {
       window.electronAPI.writeToTerminal(tabId, data);
@@ -214,8 +252,24 @@ const TerminalPanel = forwardRef<{ focus: () => void }, TerminalPanelProps>(({ t
       }
     });
 
+    // --- Ctrl+Shift+V paste from clipboard (only when terminal is focused) ---
+    const keyHandler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey && e.shiftKey && e.key === 'V')) return;
+      const el = document.activeElement;
+      if (!el || !el.closest('.terminal-container')) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      navigator.clipboard.readText().then((text) => {
+        if (text) window.electronAPI.writeToTerminal(tabId, text);
+      }).catch(() => {});
+    };
+    document.addEventListener('keydown', keyHandler);
+
     return () => {
       onDataDispose.dispose();
+      selDispose.dispose();
+      document.removeEventListener('contextmenu', ctxHandler);
+      document.removeEventListener('keydown', keyHandler);
     };
   }, [tabId, onCommandCapture]);
 
